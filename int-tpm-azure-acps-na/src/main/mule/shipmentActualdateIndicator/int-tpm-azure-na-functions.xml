@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<sub-flow name="adj-kpi-assortment-remove-transactions-subflow" doc:id="9a293e6c-22e4-4edb-a709-8eed6f2770b3" >
+		<foreach doc:name="For Each" doc:id="34bb4c8d-fd2a-4ff3-a5e6-3f554fefc2a1" >
+			<logger level="DEBUG" doc:name="Successful Txn ID's" doc:id="738c9c16-6e15-4159-891e-19acf2ff2986" message="State of transaction #[payload.txid] is success . Hence removing from Storage."/>
+			<os:remove doc:name="Remove transactions" doc:id="f590c45b-b836-4256-b9cd-fbe8ee4f3ad6" key="#[payload.txid]" objectStore="ObjectStore__Connector_Adj_Kpi_Assortment" />
+		</foreach>
+		<logger level="INFO" doc:name="End Logger" doc:id="be2710a1-9460-4b29-95a3-c1f0b9dbb1ed" message="Above transaction is removed"/>
+	</sub-flow>
+	<!-- <flow name="publish-message-to-MQ" doc:id="741e391d-70bb-4e93-9a7d-47dd7db490e5" >
+		<os:retrieve doc:name="Remove flag" doc:id="5426bb47-db32-48e8-ac2c-5b74f1b5a1d8" objectStore="Object_store_connector_MQ" key="isTriggeredByMQ" target="isTriggeredByMQ">
+			<os:default-value ><![CDATA[#[false]]]></os:default-value>
+		</os:retrieve>
+		<logger level="INFO" doc:name="Log key" doc:id="e93bb769-cead-4347-8201-952bcea9b02d" message="####  Retrieved Key from Objectstore : #[vars.isTriggeredByMQ] #######"/>
+		<os:remove doc:name="Remove flag" doc:id="819f24d5-0f0f-49f5-88c1-56332cbf26e1" key="isTriggeredByMQ" objectStore="Object_store_connector_MQ" />
+		<choice doc:name="Choice" doc:id="e175fcd3-5c4a-4e4d-bcf7-1eeb06d2d871" >
+			<when expression="#[vars.isTriggeredByMQ == true]">
+				<ee:transform doc:name="Day-Of-week" doc:id="a73a564b-0ba5-4824-850e-0f3d0df401d6" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+-&#45;&#45;
+{}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="dayOfWeek" ><![CDATA[%dw 2.0
+output application/java
+-&#45;&#45;
+now().dayOfWeek]]></ee:set-variable>
+						<ee:set-variable variableName="dayOfWeekName" ><![CDATA[%dw 2.0
+output application/java
+var week=['Monday','Tuesday','Wednesday', 'Thursday','Friday','Saturday','Sunday']
+-&#45;&#45;
+week[(now().dayOfWeek -1)]]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<choice doc:name="check-day-of-week" doc:id="224fc588-6621-42a5-8e30-75117071c0c2" >
+					<when expression="#[vars.dayOfWeek==1]">
+						<logger level="INFO" doc:name="Logger-day-of-week" doc:id="6f061798-582e-461d-b796-e18087fa74a4" message="=====Send trigger to Weekly NC Job ===== Day of the Week === #[vars.dayOfWeekName]======"/>
+						<logger level="INFO" doc:name="Log status" doc:id="8da8444f-5eff-4ef1-9eea-2220f90dd974" message="##########ACTPM FLOW TRIGGERED BY MQ. PUSHING MESSAGE TO OUTBOUNDS  ##########"/>
+						<set-payload value="#[1]" doc:name="Set Message" doc:id="1deeaade-db04-4478-870a-abeacd1017ee" />
+						<anypoint-mq:publish doc:name="push-msg-to-wnc-job" doc:id="b2d8e452-5197-40d8-af3a-c88145a7a3d9" config-ref="Anypoint_MQ_Config" destination="${mq.azure.wnc}"/>
+					</when>
+					<when expression="#[vars.dayOfWeek==7]">
+						<logger level="INFO" doc:name="Logger-day-of-week" doc:id="da13510b-ac3d-406b-a0ea-196ff212ec1a" message="=====Send trigger to baseline Job ===== Day of the Week === #[vars.dayOfWeekName]======"/>
+						<logger level="INFO" doc:name="Log status" doc:id="f696a019-052f-4cc8-b2ba-68ce288c8d6a" message="#######ACTPM FLOW TRIGGERED BY MQ. PUSHING MESSAGE TO OUTBOUNDS  ##########"/>
+						<set-payload value="#[1]" doc:name="Set Message" doc:id="88cec084-881d-44f9-bacb-91c0139e64b3" />
+						<anypoint-mq:publish doc:name="Push-message-to-baseline-job" doc:id="6db8da8a-0927-4372-968a-f997767d5d6d" config-ref="Anypoint_MQ_Config" destination="${mq.azure.baseline}"/>
+					</when>
+					<otherwise >
+						<logger level="INFO" doc:name="Logger-day-of week" doc:id="4af344a1-8e81-4b6f-931f-581f7cf27bd4" message="=====Send trigger to Weekly NC Job ===== Day of the Week === #[vars.dayOfWeekName]======"/>
+						<logger level="INFO" doc:name="Log status" doc:id="c08fa48a-8e89-43b5-b2b5-a504a7698da7" message="##########ACTPM FLOW TRIGGERED BY MQ. PUSHING MESSAGE TO OUTBOUNDS  ##########"/>
+						<set-payload value="#[1]" doc:name="Set Message" doc:id="0df436b3-6238-4188-9999-40c23431657a" />
+						<anypoint-mq:publish doc:name="Push-message-to-nc-job" doc:id="dc6ff40e-6cfe-49fb-bb1f-cec9b9d9a3aa" config-ref="Anypoint_MQ_Config" destination="${mq.azure.nc}"/>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Log status" doc:id="33a53833-9084-4e89-921f-697618644c3c" message="########FLOW TRIGGERED BY POLLER. SO NOT PUSHING MESSAGE TO OUTBOUNDS  ##########"/>
+			</otherwise>
+		</choice>
+	</flow> -->
+	<flow name="adj-kpi-assortment-Heroku-transaction-status-checkFlow" doc:id="5754b35e-beba-4e0c-a413-b1aff18d55a7" >
+		<set-variable value="#[%dw 2.0
+output application/java
+---
+[]]" doc:name="UncommittedTransactionCollection" doc:id="cbbaa32b-f51d-498d-a267-2ab3df952130" variableName="UncommittedTransactionCollection" />
+		<set-variable value="#[%dw 2.0
+output application/java
+---
+if ((sizeOf(vars.successCollection))==0) 0 else (vars.successCollection)[0]]" doc:name="successCount" doc:id="c825d38c-a030-48ac-80d9-076b861d1995" variableName="successCount"/>
+		<os:retrieve-all-keys doc:name="Retrieve all keys" doc:id="4d38a9dc-ccdd-4845-af81-8342150746f0" objectStore="ObjectStore__Connector_Adj_Kpi_Assortment"/>
+		<ee:transform doc:name="converting payload to java" doc:id="13694d7b-aad8-4c0f-961c-98822a4f3e93" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload filter ($ contains vars.filterId) map {
+	
+	'$$' : $
+}."$$"]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<foreach doc:name="For Each" doc:id="c56fcc66-bb25-4f0f-a65d-601b7c16a327" batchSize="100">
+			<ee:transform doc:name="Build Status Check Payload" doc:id="18551e44-6ae0-411a-9a66-716d1653007f">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	txid : payload01[sizeOf (vars.filterId) to -1]
+})]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<until-successful maxRetries="5" doc:name="Until Successful" doc:id="33f2ecb0-4b7f-44c7-bde5-269c05694006" >
+				<http:request method="POST" doc:name="HTTP_Transaction_Status" doc:id="5c8bb1c9-c6b7-4a8b-8631-a1fe078b79cf" config-ref="HTTPS_Request_configuration_ACPS" path="${trans.status.path}">
+			</http:request>
+			</until-successful>
+			<logger level="DEBUG" doc:name="acps-status-response" doc:id="c10d3ebe-1ac7-42d5-b4a3-55df5e299c19" message="ACPS Response for Transactions status=======#[payload]"/>
+			<flow-ref doc:name="decider-to-call-acps-check-status-flow" doc:id="a0735cb0-7378-4075-82ba-e5ec3c88a604" name="decider-to-call-acps-check-status-flow"/>
+		</foreach>
+	</flow>
+	
+	<flow name="ship-spin-indicator-mq-flow" doc:id="f6e3654a-3eac-412e-905e-299377c9d0e1" doc:description="This flow is used to redirect the message to the next interface as a part of the dynamic scheduling">
+		<logger level="INFO" doc:name="log-message" doc:id="6fc2d63f-0f5a-444f-b007-d31898a4741b" message="Shipment Spin Indicator Mq Flow Called !!" category="com.unilever.tpm.na.azure.acps.cass.deduction.functions.log.mq.message"/>
+		<os:retrieve doc:name="retrieve-mq-key" doc:id="cdcef2c4-00a0-4db5-9f9d-ca8f9c7f781b" key="isTriggeredByMQ" objectStore="Object_store_connector_MQ" target="isTriggeredByMQ">
+			<os:default-value ><![CDATA[#[false]]]></os:default-value>
+		</os:retrieve>
+		<logger level="INFO" doc:name="log-mq-key" doc:id="6ee21e24-cdf2-4ea8-83ad-4a7973d5c4ac" message="Mq Key : #[vars.isTriggeredByMQ]" category="com.unilever.tpm.na.azure.acps.cass.deduction.functions.log.mq.key"/>
+		<os:remove doc:name="removey-mq-key" doc:id="57a20a2a-c6a7-4bb6-8ede-b8ca58519756" key="isTriggeredByMQ" objectStore="Object_store_connector_MQ"/>
+		<choice doc:name="check-mq-key" doc:id="6df4aa99-02fb-42ab-8364-54e68b29ba3a" >
+			<when expression="#[vars.isTriggeredByMQ == true]">
+				<logger level="INFO" doc:name="log-message" doc:id="4705a222-9cb8-41fb-8b1a-a4babe334572" message="######## SHIPMENT SPIN INDICATOR FLOW TRIGGERED BY MQ. PUSHING MESSAGE TO OUTBOUNDS  ##########" category="com.unilever.tpm.na.azure.acps.cass.deduction.functions.log.message"/>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Log-message" doc:id="50140a8b-adb2-4b36-819e-e5bbf5f4a4cc" message="######## SHIPMENT SPIN INDICATOR FLOW TRIGGERED BY POLLER. SO NOT PUSHING MESSAGE TO OUTBOUNDS  ##########" category="com.unilever.tpm.na.azure.acps.cass.deduction.functions.log.message"/>
+			</otherwise>
+		</choice>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="31b50927-5902-4282-b81d-bf530e643ed6" >
+				<logger level="INFO" doc:name="log-exception" doc:id="22fc79fe-2746-4c6e-ae3f-f249a186eb9a" message="Exception occured in flow : #[flow.name] #[error.description]" category="com.unilever.tpm.na.azure.acps.cass.deduction.functions.log.exception"/>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+</mule>

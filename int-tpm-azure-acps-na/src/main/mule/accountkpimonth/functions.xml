@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+
+	<flow name="generate-azure-token-flow" doc:id="9a3d6cbf-e3e8-4082-8a42-d9dc0a2db76c" doc:description="Flow which generate authentication token from azure and strorig in a variable.">
+		<set-variable value="text/xml" doc:name="set-content-type" doc:id="57642871-f549-4576-972c-cee30d97b276" variableName="Content-Type"/>
+		<set-payload value="#[null]" doc:name="set-soap-payload" doc:id="456cd0ba-2956-469d-b3b2-d2b87fe017f9" />
+		<set-payload value='&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"&gt; &lt;soapenv:Header/&gt; &lt;soapenv:Body&gt; &lt;tem:GetJwtToken&gt; &lt;!--Optional:--&gt; &lt;tem:userName&gt;${secure::azuretoken.username}&lt;/tem:userName&gt; &lt;!--Optional:--&gt; &lt;tem:password&gt;${secure::azuretoken.password}&lt;/tem:password&gt; &lt;/tem:GetJwtToken&gt; &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;' doc:name="set-soap-payload" doc:id="acd4c703-4bff-4e3d-9163-11d6664dd551" mimeType="text/xml"/>
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Retry" doc:id="bcfc1529-849f-4176-9acb-a00f4e2f7b57" millisBetweenRetries="${untilsuccessful.retryinterval}">
+			<http:request method="POST" doc:name="generate-azure-token" doc:id="486735af-df4a-43bd-b164-52e97bb3ddfa" config-ref="HTTPS_Request_Configuration_Azure" path="${azure.tokengeneration.path}"/>
+		</until-successful>
+		<set-variable value="#[%dw 2.0
+output application/json
+---
+payload.Envelope.Body.GetJwtTokenResponse.GetJwtTokenResult]" doc:name="set-azure-token" doc:id="0f6c4c21-a049-4edc-9166-2f4d2d927e65" variableName="token"/>
+		
+	</flow>
+	<flow name="log-to-azure-flow" doc:id="9ea4d784-28da-45ba-9f29-c1daccc52fe1" doc:description="flow to log data/message to azure using soap payload and storing log id.">
+		
+		<flow-ref doc:name="generate-azure-token-flow" doc:id="970f77bb-d824-4de6-b5fd-4db7d8c53a3a" name="generate-azure-token-flow"/>
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt;&lt;soapenv:Header /&gt;&lt;soapenv:Body&gt;&lt;tem:MaintainLog&gt;&lt;tem:id&gt;' ++ (if (vars.Azure_Log_ID == null) &quot;&quot; else vars.Azure_Log_ID as String) ++ '&lt;/tem:id&gt;&lt;tem:sessionId&gt;' ++ (if (vars.Azure_Log_ID == null) vars.sessionID as String else &quot;&quot;) ++ '&lt;/tem:sessionId&gt;&lt;tem:stepName&gt;' ++ (if (vars.Azure_Log_ID == null) vars.azureLogging.stepName else &quot;&quot;) ++ '&lt;/tem:stepName&gt;&lt;tem:market&gt;' ++ (if (vars.Azure_Log_ID == null) 'NAMarketName' else &quot;&quot;) ++ '&lt;/tem:market&gt;&lt;tem:flow&gt;' ++ (if (vars.Azure_Log_ID == null) vars.azureLogging.flowName as String else &quot;&quot;) ++ '&lt;/tem:flow&gt;&lt;tem:component&gt;' ++ (if (vars.Azure_Log_ID == null) 'MulesoftComponentName' else &quot;&quot;) ++ '&lt;/tem:component&gt;&lt;tem:status&gt;' ++ (if (vars.Azure_Log_ID == null) '0' else vars.azureLogging.status as String) ++ '&lt;/tem:status&gt;&lt;tem:logMessage&gt;' ++ (if (vars.azureLogging.message == null) &quot;&quot; else vars.azureLogging.message as String) ++ '&lt;/tem:logMessage&gt;&lt;/tem:MaintainLog&gt;&lt;/soapenv:Body&gt;&lt;/soapenv:Envelope&gt;']" doc:name="set-soap-payload" doc:id="c84b4340-0e96-4b96-bb70-6600bbd46ed0" mimeType="text/xml"/>
+		<logger level="INFO" doc:name="log-soap-payload" doc:id="d1fa0c89-4ac3-4c2d-acb2-9346d4df0d33" message="=== Soap Payload === #[payload]"/>
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Retry" doc:id="d65235db-53b8-478a-b19a-7ce4faca5606" millisBetweenRetries="${untilsuccessful.retryinterval}">
+			<http:request method="POST" doc:name="log-to-azure" doc:id="86515743-f1a8-4f18-abd6-ff8ae2657602" config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+			</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="log-table-response" doc:id="d2886970-8a10-4493-a48a-f336c65a4401" message="Azure Log Table response===#[payload] ==="/>
+		<set-variable value="#[payload.OutputTable.Output[0]]" doc:name="set-log-id" doc:id="ea5c5c62-c2dd-4e59-a430-da5511c74486" variableName="Azure_Log_ID"/>
+		</flow>
+	<flow name="get-session-flow" doc:id="7b075acb-656f-486b-80c6-35d6c5132306" doc:description="Flow to fetch session details from azure, uses azure auth.token for this purpose.">
+		<flow-ref doc:name="generate-azure-token-flow" doc:id="b2411914-92d3-4559-ae32-5bf82b8459c4" name="generate-azure-token-flow"/>
+		
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt;    &lt;soapenv:Header/&gt;    &lt;soapenv:Body&gt;      &lt;tem:UNLExecuteAction&gt;          &lt;!--Optional:--&gt;          &lt;tem:tableName&gt;&lt;/tem:tableName&gt;          &lt;!--Optional:--&gt;          &lt;tem:operatingType&gt;StatementSelectsSingleRow&lt;/tem:operatingType&gt;          &lt;!--Optional:--&gt;          &lt;tem:where&gt;&lt;/tem:where&gt;          &lt;!--Optional:--&gt;          &lt;tem:data&gt;EXEC ${azure.updateSemaphore.view} @Session_ID=NULL,@Market = NAMarketName,@Flow =' ++ (vars.flowName as String) ++' ,@Component = MulesoftComponentName,@CanStart = 1&lt;/tem:data&gt;       &lt;/tem:UNLExecuteAction&gt;    &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="set-soap-payload" doc:id="00d84f1c-0889-4949-ace5-e348796feb0e" mimeType="text/xml"/>
+		<logger level="INFO" doc:name="log-soap-payload" doc:id="faf0c3cf-79cd-425f-bd80-f56586c86ffb" message="=== Session start SOAP Payload === #[payload]"/>
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Retry" doc:id="b7c50116-b021-4c27-a6a3-f0e28d708734" millisBetweenRetries="${untilsuccessful.retryinterval}">
+			<http:request method="POST" doc:name="get-azure-session" doc:id="b00a7bcf-099a-4887-933e-ec458f808152" config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+			</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="log-session-id" doc:id="da8a32ce-42fe-4d50-9203-508d00c93f40" message="=== Session Details from Azure for #[vars.appName] === #[payload]"/>
+	</flow>
+	<flow name="store-azuretoken-flow" doc:id="bcfc53b9-7c4f-4676-acaa-9dfff31fa7c5" >
+		<scheduler doc:name="Scheduler" doc:id="42357527-4759-4a9e-948f-bbb3c0fe897e" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="45" timeUnit="MINUTES"/>
+			</scheduling-strategy>
+		</scheduler>
+		<flow-ref doc:name="get-azure-token" doc:id="a1ebd4d4-654c-412c-93ff-0b1ca31504f0" name="generate-azure-token-flow" target="token"/>
+		<set-variable value="#[%dw 2.0
+output application/json
+---
+vars.token.Envelope.Body.GetJwtTokenResponse.GetJwtTokenResult]" doc:name="set-azure-token" doc:id="1994e719-2d04-473e-aa0d-49b86708d46e" variableName="azureTokenObj"/>
+		<logger level="INFO" doc:name="log-azure-token" doc:id="58daa837-c6a0-4271-b90b-810049fe1eca" message="=== Azure Token retrived === Pushing token into Object Store ==="/>
+		<os:store doc:name="store-azure-token" doc:id="7dd0c64e-fe72-425d-8a6d-63ec2a353c47" key="azureTokenObj" objectStore="account_kpi_os">
+			<os:value ><![CDATA[#[vars.azureTokenObj]]]></os:value>
+		</os:store>
+		
+	</flow>
+	<flow name="session-closure-flow" doc:id="9e42a5b0-0287-41e1-a087-801505a49e79" doc:description="Flow to close the current open session in azure. It requires auth token from azure.">
+		<flow-ref doc:name="generate-azure-token-flow" doc:id="b55ffe1b-fa46-4c72-b0cd-0a72e47a4f4b" name="generate-azure-token-flow"/>
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt; &lt;soapenv:Header/&gt; &lt;soapenv:Body&gt; &lt;tem:UNLExecuteAction&gt; &lt;tem:tableName&gt;&lt;/tem:tableName&gt; &lt;tem:operatingType&gt;statement&lt;/tem:operatingType&gt; &lt;tem:where&gt;&lt;/tem:where&gt; &lt;tem:data&gt;EXEC ' ++ ' ' ++ p('azure.updateSemaphore.view') ++ ' ' ++  '@Session_ID=' ++ vars.sessionID ++ ',@Market = NAMarketName ,@Flow =' ++ (vars.azureLogging.flowName as String) ++ ' ,@Component = MulesoftComponentName ,@CanStart = 0&lt;/tem:data&gt;       &lt;/tem:UNLExecuteAction&gt;    &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="set-soap-payload" doc:id="9ab1c65a-6fa3-4a32-8818-acbadce2d848" mimeType="text/xml"/>
+		<logger level="INFO" doc:name="log-soap-payload" doc:id="1b13a268-3a00-486f-867c-5a86f184c5d7" message="Session Closure payload ================== #[payload]"/>
+		<set-variable value="#[2]" doc:name="set-status" doc:id="61c75dd1-1b08-4539-82eb-7fdb581bce60" variableName="status"/>
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Retry" doc:id="7d53bb13-1676-485d-8dc5-2a42d6458fea" millisBetweenRetries="${untilsuccessful.retryinterval}">
+			<http:request method="POST" doc:name="close-semaphore" doc:id="cb3a6fee-6361-4691-b927-527a56b8ad19" config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+			</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="log-azure-response" doc:id="5f694dda-280f-45fc-9d65-5535834135af" message="Azure Response after Session closure===#[payload]"/>
+	</flow>
+	
+	<flow name="termination-flow" doc:id="eb125084-bafa-488d-b55c-7b0b5d60b4a6" >
+		<os:store doc:name="store-current-runtime" doc:id="64e020f3-79a5-486d-92e1-c00114d8d476" key="LastSuccessfulRun_AccountKPI" objectStore="account_kpi_os">
+			<os:value ><![CDATA[#[now() as String {format: "yyyy-MM-dd HH:mm:ss"}]]]></os:value>
+		</os:store>
+		<ee:transform doc:name="failed-accounts" doc:id="bc3bf8cd-b04a-4533-bfba-ccd5575e1aa5" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="failed_list" ><![CDATA[%dw 2.0
+output application/java
+---
+(flatten(vars.failed_accounts) joinBy "|") as String]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="set-azure-log-variables" doc:id="d230f227-1821-4e8e-bd14-229cabf9181b">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+output application/java
+---
+"AccountKPI completed successfully with failed accounts as = " ++ (vars.failed_list as String)]]></ee:set-variable>
+				<ee:set-variable variableName="azureLogging"><![CDATA[%dw 2.0
+output application/json
+---
+{
+	message : "AccountKPI completed successfully with failed accounts as = " ++ (vars.failed_list as String),
+	status : 1,
+	stepName : "Successfully completed Account KPI",
+	flowName : "TPMFlowName_FundTransOutDeltaPBCS"
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<os:store doc:name="Store failed account-year" doc:id="53d05e70-ee26-4498-880b-1882b91fbac9" key="failedAccount_year" objectStore="account_kpi_os">
+			<os:value ><![CDATA[#[vars.failed_list]]]></os:value>
+		</os:store>
+		<flow-ref doc:name="log-to-azure-flow" doc:id="8b63176b-544c-447e-b51d-a611e48ac59b" name="log-to-azure-flow"/>
+		<os:clear doc:name="clear-object-store" doc:id="fc0caaa7-3917-4e53-ac41-65c61d6005e9" objectStore="Object_store_AccountKpi"/>
+		<flow-ref doc:name="session-closure-flow" doc:id="accd86cb-a585-4f9e-b796-0e777944c5c7" name="session-closure-flow"/>
+		<logger level="INFO" doc:name="log-status-of-flow" doc:id="19cde5cf-4ea9-4ec0-96c9-bdc00ff04641" message="===  Account KPI Month Flow Completed ================ Total Records processed = #[vars.total_count] ==="/>
+	</flow>
+	<flow name="endpoint-check-flow" doc:id="943b70f1-11bc-45b8-8b16-be93555d1b51" >
+		<vm:listener queueName="endPoint" doc:name="Listener" doc:id="3e87f7cb-674f-4781-9088-ae5fcef5d605" config-ref="VM_Account_KPI" timeout="20"/>
+		<ee:transform doc:name="set-variables" doc:id="66fa6356-524f-49bd-994c-02bbba149120" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="blank_kpi" ><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-variable>
+				<ee:set-variable variableName="unknown_accounts" ><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-variable>
+				<ee:set-variable variableName="failed_accounts" ><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-variable>
+				<ee:set-variable variableName="changed_accounts" ><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-variable>
+				<ee:set-variable variableName="completed_accounts" ><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-variable>
+				<ee:set-variable variableName="measureBatch" ><![CDATA[%dw 2.0
+output application/java
+---
+ceil(sizeOf(p('accountKPI.measures') splitBy",") / 20)]]></ee:set-variable>
+				<ee:set-variable variableName="data_volume" ><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-variable>
+				<ee:set-variable variableName="sessionID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.sessionID]]></ee:set-variable>
+				<ee:set-variable variableName="Azure_Log_ID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.Azure_Log_ID]]></ee:set-variable>
+				<ee:set-variable variableName="lastSucessfullRun" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.lastSucessfullRun]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<os:retrieve-all-keys doc:name="retrieve-all-keys" doc:id="ce3b22f7-5ff2-4f83-ab22-c63006f14228" objectStore="Object_store_AccountKpi"/>
+		<logger level="DEBUG" doc:name="log-status" doc:id="d5fe3b93-ad69-4789-9fd3-3948e977208e" message="=== Retrieved Payload === #[payload]" />
+		<foreach doc:name="iterate-over-data" doc:id="56269234-5bc6-466b-95e7-8294a9cb8db5" >
+			<ee:transform doc:name="set-file-name" doc:id="8372bce9-f890-4091-a6df-9b5c02e6a466" >
+				<ee:message >
+				</ee:message>
+				<ee:variables >
+					<ee:set-variable variableName="failed_acc" ><![CDATA[%dw 2.0
+output application/java
+
+---
+if(payload contains "failedAccounts_")
+(((payload splitBy "_")[1] ++ "_" ++ (payload splitBy "_")[2]) as String) 
+
+else ""]]></ee:set-variable>
+					<ee:set-variable variableName="no_kpi" ><![CDATA[%dw 2.0
+output application/json
+---
+if(payload contains "blankKPI_")(
+(payload splitBy "_")[1] as String) else ""]]></ee:set-variable>
+					<ee:set-variable variableName="unknown_acc" ><![CDATA[%dw 2.0
+output application/java
+---
+if(payload contains "unknownAccounts_")(
+(payload splitBy "_")[1] as String) else ""
+
+
+]]></ee:set-variable>
+					<ee:set-variable variableName="change_acc" ><![CDATA[%dw 2.0
+output application/java
+---
+if(payload contains "ChangeAccount_")(
+(payload splitBy "_")[1] as String) else ""]]></ee:set-variable>
+					<ee:set-variable variableName="completed_acc" ><![CDATA[%dw 2.0
+output application/json
+---
+if(payload contains "CompletedKPI_")(
+(payload splitBy "_")[1] as String) else ""]]></ee:set-variable>
+					<ee:set-variable variableName="data_count" ><![CDATA[%dw 2.0
+output application/java
+---
+if(payload contains "DataVolume_")(
+(payload splitBy "_")[1] as Number) else ""]]></ee:set-variable>
+				
+
+</ee:variables>
+			</ee:transform>
+			<ee:transform doc:name="add-files-to-list" doc:id="107b36ab-9618-4efe-8b6c-9f84ad287c68" >
+				<ee:message >
+				</ee:message>
+				<ee:variables >
+					<ee:set-variable variableName="failed_accounts" ><![CDATA[%dw 2.0
+output application/java
+---
+if (vars.failed_acc != null and vars.failed_acc != "" ) (vars.failed_accounts ++ [vars.failed_acc])
+else (vars.failed_accounts ++ [])]]></ee:set-variable>
+					<ee:set-variable variableName="blank_kpi" ><![CDATA[%dw 2.0
+output application/java
+---
+if (vars.no_kpi != null and vars.no_kpi != "" ) (vars.blank_kpi ++ [vars.no_kpi])
+else (vars.blank_kpi ++ [])]]></ee:set-variable>
+					<ee:set-variable variableName="unknown_accounts" ><![CDATA[%dw 2.0
+output application/java
+---
+if (vars.unknown_acc != null and vars.unknown_acc != "" ) (vars.unknown_accounts ++ [vars.unknown_acc])
+else (vars.unknown_accounts ++ [])
+]]></ee:set-variable>
+					<ee:set-variable variableName="changed_accounts" ><![CDATA[%dw 2.0
+output application/java
+---
+if (vars.change_acc != null and vars.change_acc != "" ) (vars.changed_accounts ++ [vars.change_acc])
+else (vars.changed_accounts ++ [])
+]]></ee:set-variable>
+					<ee:set-variable variableName="completed_accounts" ><![CDATA[%dw 2.0
+output application/java
+---
+if (vars.completed_acc != null and vars.completed_acc != "" ) (vars.completed_accounts ++ [vars.completed_acc])
+else (vars.completed_accounts ++ [])]]></ee:set-variable>
+					<ee:set-variable variableName="data_volume" ><![CDATA[%dw 2.0
+output application/java
+---
+if (vars.data_count != null and vars.data_count != "" ) 
+(vars.data_volume ++ [vars.data_count])
+else (vars.data_volume ++ [])]]></ee:set-variable>
+				
+
+</ee:variables> 
+			</ee:transform>
+	
+	</foreach>
+		<logger level="INFO" doc:name="log-record-count" doc:id="e8cff6f5-d706-4e42-b223-609ad46d2b03" message="=== Count of entries in data volume === #[sizeOf(vars.data_volume)] === "/>
+		<logger level="INFO" doc:name="log-processed-count" doc:id="acab65da-7945-45b5-8b3b-9174763c45bf" message='#["Changed accounts = " ++ sizeOf(vars.changed_accounts) ++ " completed_accounts = " ++ sizeOf(vars.completed_accounts) ++ 
+"failed_accounts = " ++ sizeOf(vars.failed_accounts) ++ " blank_kpi = " ++ sizeOf(vars.blank_kpi) ++ " unknown_accounts = " ++ sizeOf(vars.unknown_accounts)]'/>
+		<ee:transform doc:name="set-record-counts" doc:id="02443cd0-9384-4c77-8d65-0b978f0d928e" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="isCompleted" ><![CDATA[%dw 2.0
+output application/java
+
+var ChangeAcc = sizeOf(vars.changed_accounts) as Number
+var unknownAcc = sizeOf(vars.unknown_accounts) as Number
+var blankKPI = sizeOf(vars.blank_kpi) as Number
+var failedAcc = sizeOf(vars.failed_accounts) as Number
+var completedAcc = sizeOf(vars.completed_accounts) as Number
+var measureBatch = ceil(sizeOf(p('accountKPI.measures') splitBy",") / 20)
+var totalProcessed = unknownAcc + blankKPI + failedAcc + completedAcc
+
+---
+
+if((ChangeAcc * measureBatch) == totalProcessed) (true) else (false)]]></ee:set-variable>
+				<ee:set-variable variableName="total_count" ><![CDATA[%dw 2.0
+output application/java
+---
+sum(vars.data_volume) ]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="a71d13ab-2f40-466b-95ce-9a15f72623d6" >
+			<when expression="#[vars.isCompleted]">
+				<os:retrieve doc:name="retrieve-retry-key" doc:id="ff8269e3-73d3-4d2f-9136-923f24587f95" key="isRetry" target="isRetry" objectStore="Object_store_AccountKpi">
+					<os:default-value><![CDATA[#[false]]]></os:default-value>
+				</os:retrieve>
+				<choice doc:name="Choice" doc:id="a0cb66af-ba62-432c-82fa-bb46c4de2623" >
+					<when expression="#[!(vars.isRetry) and (sizeOf(vars.failed_accounts) &gt; 0)]">
+						<os:store doc:name="store-retry-key" doc:id="a10e185c-220b-40f0-88ed-cbc862674c73" key="isRetry" objectStore="Object_store_AccountKpi">
+							<os:value ><![CDATA[#[true]]]></os:value>
+						</os:store>
+						<ee:transform doc:name="set-data" doc:id="d97f3ea9-11e0-46a1-b899-7e06d8bef78f">
+							<ee:message>
+								<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"data" : vars.failed_accounts,
+  "sessionID": vars.sessionID,
+  "Azure_Log_ID": vars.Azure_Log_ID,
+  "lastSucessfullRun": vars.lastSucessfullRun
+}
+]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+						<vm:publish doc:name="Publish" doc:id="a4e632b2-2170-4923-ab01-82c7ca97d80d" config-ref="VM_Account_KPI" timeout="20" queueName="retry_queue"/>
+					</when>
+					<otherwise>
+						<flow-ref doc:name="termination-flow" doc:id="6d6537c2-c1b9-40da-ae9e-f0f605f805f8" name="termination-flow" />
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="log-status" doc:id="7bf34507-6dfe-4e75-a8b3-216435ced4c2" message="=== Continue ==="/>
+			</otherwise>
+		</choice>
+		
+
+</flow>
+	<flow name="retry-failedAccounts-flow" doc:id="316e5db1-7897-40b9-81fe-14c9eb058cf0" >
+		<vm:listener queueName="retry_queue" doc:name="Listener" doc:id="60f9e138-1ef1-43f3-81c6-75abced603d1" config-ref="VM_Account_KPI" timeout="20"/>
+		<ee:transform doc:name="set-variables" doc:id="4944a7b2-7c65-4d3d-8411-79faf7a4e3f0" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload.data]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="sessionID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.sessionID]]></ee:set-variable>
+				<ee:set-variable variableName="Azure_Log_ID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.Azure_Log_ID]]></ee:set-variable>
+				<ee:set-variable variableName="lastSucessfullRun" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.lastSucessfullRun]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="log-status" doc:id="1d90d31b-a6c8-4f7b-89aa-9e536252e99f" message="=== Started Reprocessing Failed Records ==="/>
+		<foreach doc:name="iterate-over-accounts" doc:id="c933e96d-e863-46e1-be9e-245e05a52143" >
+			<os:remove doc:name="remove-failed-records " doc:id="01bba7fb-c793-460b-ac57-5382ea6a2202" key="#[payload]" objectStore="Object_store_AccountKpi" />
+			<ee:transform doc:name="set-data" doc:id="f86b686a-8201-4cce-8f82-bfd40482916e" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"data" : {
+		"iteratingaccountID" : ((payload splitBy "_")[0] as String),
+		"iteratingyear" :  ((payload splitBy "_")[1] as String)
+	},
+	"sessionID": vars.sessionID,
+  "Azure_Log_ID": vars.Azure_Log_ID,
+  "lastSucessfullRun": vars.lastSucessfullRun
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<vm:publish doc:name="Publish" doc:id="1af8c198-4d3e-443e-8684-77ed348d3add" config-ref="VM_Account_KPI" queueName="account_kpi" timeout="20"/>
+		</foreach>
+	</flow>
+	
+</mule>
+
+	

@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<sub-flow name="adjustment-kpi-assortment-get-measures-flow" doc:id="39e5e2d1-bda8-478b-b25c-35294afa3bfc" doc:description="This flow makes the log entries and fetch salesorg types from azure." >
+		<ee:transform doc:name="set-vars" doc:id="b46d738b-6641-4644-aec5-242a825865b2" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="azureLogId" ><![CDATA[%dw 2.0
+output application/java
+---
+null]]></ee:set-variable>
+				<ee:set-variable variableName="stepName" ><![CDATA[%dw 2.0
+output application/java
+---
+'Reading unique measure types']]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="azure-log-table-update-flow" doc:id="be04170b-c646-4f81-87f0-cfe6a2818624" doc:description="Call azure log update flow." name="azure-log-table-update-flow" />
+		<flow-ref doc:name="azure-token-retrieve-sub-flow" doc:id="ddcbb06d-7c9d-4477-9785-112d2b57c2a1" doc:description="Call azure token retrieve sub flow." name="azure-token-retrieve-sub-flow" />
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soap:Envelope xmlns:soap=&quot;http://www.w3.org/2003/05/soap-envelope&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt;    &lt;soap:Header/&gt;    &lt;soap:Body&gt;       &lt;tem:UNLExecuteAction&gt;          &lt;!--Optional:--&gt;          &lt;tem:tableName&gt;${azure.adjAssortment.getData.condition.view}&lt;/tem:tableName&gt;          &lt;!--Optional:--&gt;          &lt;tem:operatingType&gt;select&lt;/tem:operatingType&gt;          &lt;!--Optional:--&gt;          &lt;tem:where&gt;&lt;/tem:where&gt;          &lt;!--Optional:--&gt;          &lt;tem:data&gt;&lt;/tem:data&gt;       &lt;/tem:UNLExecuteAction&gt;    &lt;/soap:Body&gt; &lt;/soap:Envelope&gt;']" doc:name="salesorg-type-request" doc:id="dfa5ab71-0548-4197-8038-7c9324f2e290" doc:description="Set Salesorg and type request to fetch condition type data from azure." mimeType="text/xml" />
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Retry" doc:id="2bd27ce0-2b76-4e16-a2dd-c06ae83b2350" millisBetweenRetries="${untilsuccessful.retryinterval}">
+			<http:request method="POST" doc:name="fetch-salesorg-types-from-azure" doc:id="33f46647-c13f-4af6-bfad-780b2fec2a79" doc:description="Connect to azure to fetch condition type data." config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+		</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="Logging data from azure" doc:id="8690187c-5037-46ea-8f06-a729c034d40a" message="#[payload.Table]"/>
+		<ee:transform doc:name="build-array" doc:id="59f5ee8a-78e6-4f92-bb82-5b54a3e22d1e" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="message" ><![CDATA[%dw 2.0
+output application/java
+---
+'Successfully read all unique salesorg types']]></ee:set-variable>
+				<ee:set-variable variableName="code_array" ><![CDATA[%dw 2.0
+output application/java
+
+---
+payload.Table map {
+	
+	//codes: if(vars.flowNameVar== "TPMFlowName_Baseline") $.TPM_Sales_Organization_c else $.SalesOrg,
+	//(measure: $.ConditionType) if (vars.flowNameVar== "TPMFlowName_Sales" or vars.flowNameVar== "TPMFlowName_ActualOI"),
+	//count: $.Row_Count
+	codes: $.Measurecode,
+	salesorg: $.SalesOrg,
+	count: $.Row_Count
+}]]></ee:set-variable>
+				<ee:set-variable variableName="finalCount" ><![CDATA[%dw 2.0
+output application/java
+---
+sum (payload.Table map {
+	
+	count: ceil (($.Row_Count as Number)/(p('adjAssortment.to.aws.records') as Number))
+}.count)]]></ee:set-variable>
+				<ee:set-variable variableName="status" ><![CDATA[%dw 2.0
+output application/java
+---
+'1']]></ee:set-variable>
+				<ee:set-variable variableName="totalVal" ><![CDATA[%dw 2.0
+output application/java
+---
+sum (payload.Table map {
+	
+	count: $.Row_Count
+}.count)]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="log-array" doc:id="7f02ec82-2e1b-4f95-8427-71e8c63e4a14" doc:description="Log  Salesorg and Type array." message="Salesorg type array=====#[vars.code_array]" category="com.unilever.tpm.eu.common" />
+		<flow-ref doc:name="azure-log-table-update-flow" doc:id="170b9436-dc2d-402d-9ece-73a8441d2a8d" doc:description="Update azure log table." name="azure-log-table-update-flow" />
+	</sub-flow>
+	<flow name="get-measures-azure-flow" doc:id="8562d617-2c8a-46ce-9c8e-557b27473625" doc:description="This flow invokes session details flow, makes the log entries and invokes the condition types info flow." >
+		<flow-ref doc:name="adjustment-kpi-assortment-get-measures-flow" doc:id="bc8d97ae-3e64-4f12-8bc6-33dbe5f594d5" doc:description="Call Build measure array flow." name="adjustment-kpi-assortment-get-measures-flow" />
+		<choice doc:name="empty-array-check" doc:id="ca3cf7ea-9f2f-431e-b31e-6fa8049c3c5c" doc:description="Check whether the array is empty or not.">
+					<when expression="#[(sizeOf(vars.code_array)) &gt; 0]">
+						<set-variable value="#[null]" doc:name="azure-log-id" doc:id="1f3db518-9e47-4798-98c4-f9cef13f5379" doc:description="Set azure log id." variableName="azureLogId" />
+						<set-variable value="#['Reading data based on unique Measure types and posting to Heroku with Transaction Check']" doc:name="step-name" doc:id="40e84d6f-9126-404b-81d7-f72677d82740" doc:description="Set azure step name." variableName="stepName" />
+						<flow-ref doc:name="azure-log-table-update-flow" doc:id="f512c518-3513-4c09-8607-1ee9ace8ed02" doc:description="Update azure log table." name="azure-log-table-update-flow" />
+						<set-variable value="#[vars.azureLogId]" doc:name="Set Final Azure log ID" doc:id="f1ca3b17-64d9-4c5d-88a8-2b9b38210ae4" variableName="Final_Azure_Log_ID" />
+						<set-variable value="#[%dw 2.0
+output application/java
+---
+[vars.Final_Azure_Log_ID, vars.finalCount, vars.sessionId , vars.flowName, vars.totalVal]]" doc:name="set-end-point-variable" doc:id="86f60af7-7481-424a-9d5b-2bec03e35c73" variableName="endPointVariable" />
+						<os:store doc:name="store-end-point-data" doc:id="c450bb5f-58f0-4ce4-bf03-6491a785b6c9" objectStore="End_point_Object_store" key="endPointData">
+							<os:value><![CDATA[#[vars.endPointVariable]]]></os:value>
+						</os:store>
+						<set-payload value="#[vars.code_array]" doc:name="Set Measure Array" doc:id="487ae8b2-aa72-4ead-9a65-8e9593253201" />
+					</when>
+					<otherwise>
+						<flow-ref doc:name="azure-semaphore-update-flow" doc:id="14cd8f6f-dea4-4fd4-b8cb-627915c87298" doc:description="Update Semaphore table." name="azure-semaphore-update-flow" />
+						<logger level="INFO" doc:name="End Logger" doc:id="f8d04c41-444c-4b4f-84d5-d35fd37131d4" message="&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;No Data From Azure thereby NA Adj Kpi Assortments Interface Complete&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;" />
+						<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+       message : "No Data For Adj Kpi Assortment From Azure !!",
+       priority : "INFO"
+
+}]' doc:name="Notification-msg" doc:id="601813e2-bdba-42b6-867e-117f0435014d" />
+						<flow-ref doc:name="generate-cloudhub-notification" doc:id="2c0e16b8-1b20-4311-8227-95d4ea778f82" name="generate-cloudhub-notification" />
+					</otherwise>
+				</choice>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="9d41c7e1-a05b-4d04-b0f9-b0a7ba9123fb" >
+				<flow-ref doc:name="azure-exception-flow" doc:id="12858597-11d2-4187-9634-a414e43e14a5" doc:description="Call baseline error handling flow." name="azure-exception-flow" />
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<sub-flow name="unknown-accnts-and-prds-post-to-azure-flow" doc:id="31eb0344-7aa1-4e62-a878-5034d5000974" doc:description="This flow sets the unknown accounts and products as payload and insert it to azure" >
+		<choice doc:name="check-unknown-accnts-and-prds" doc:id="23138e96-efd4-4c9c-811b-9aaf88c3f862" doc:description="Check unknown accounts and products." >
+			<when expression="#[(vars.failedAccounts != null) and (vars.failedPrds == null)]" >
+				<set-payload value="#[%dw 2.0
+output application/java
+---
+(vars.failedAccounts)]" doc:name="set-unknown-accnts" doc:id="3b68881d-63d8-4494-a821-8677f4dc9588" doc:description="Set payload for unknown accounts." />
+				<foreach doc:name="for-each-batch-of-failure" doc:id="9c3c7539-acb3-4317-9bab-fc348403c37f" batchSize="500" >
+					<flow-ref doc:name="insert-unknown-accnts-to-azure-flow" doc:id="a2a92b3a-97b7-41e6-812a-338fd108dc55" doc:description="Call insert unkown accounts to azure flow." name="insert-unknown-accnts-to-azure-flow" />
+				</foreach>
+			</when>
+			<when expression="#[(vars.failedAccounts == null) and (vars.failedPrds != null)]" >
+				<set-payload value="#[%dw 2.0
+output application/java
+---
+(vars.failedPrds)]" doc:name="set-unknown-prds" doc:id="b3530591-e7db-423e-bea7-c7ac2017278d" doc:description="Set payload for unknown products." />
+				<foreach doc:name="for-each-batch-of-failure" doc:id="4143f6a8-ce80-45f5-8a27-ce3d1314281c" batchSize="500" >
+					<flow-ref doc:name="insert-unknown-prds-to-azure-flow" doc:id="95a063b1-19ed-40f0-8b15-0c5f4d1626b8" doc:description="Call insert unkown products to azure flow." name="insert-unknown-prds-to-azure-flow" />
+				</foreach>
+			</when>
+			<when expression="#[(vars.failedAccounts != null) and (vars.failedPrds != null)]" >
+				<foreach doc:name="for-each-batch-of-failure" doc:id="ade936aa-ee6b-48f3-a978-35655591d135" batchSize="500" >
+					<set-payload value="#[%dw 2.0
+output application/java
+---
+(vars.failedAccounts)]" doc:name="set-unknown-accnts" doc:id="edd14881-bf51-482f-add1-d0784305bd0e" />
+					<flow-ref doc:name="insert-unknown-accnts-to-azure-flow" doc:id="9648a39d-d742-4983-a494-2958d9e8023c" doc:description="Call insert unkown accounts to azure flow." name="insert-unknown-accnts-to-azure-flow" />
+				</foreach>
+				<foreach doc:name="for-each-batch-of-failure" doc:id="d4ae9fcd-5629-46e0-9b88-4f3320e0fea9" batchSize="500" >
+					<set-payload value="#[%dw 2.0
+output application/java
+---
+(vars.failedPrds)]" doc:name="set-unknown-prds" doc:id="b717b0fd-d12d-4120-ac16-ab4fa66ee2c0" />
+					<flow-ref doc:name="insert-unknown-prds-to-azure-flow" doc:id="539f6836-4c71-42a9-b240-fba22cf46977" doc:description="Call insert unkown products to azure flow." name="insert-unknown-prds-to-azure-flow" />
+				</foreach>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="no-unknown-acc-and-prd" doc:id="a5536b17-2d8c-468f-a127-5b4374ec2954" doc:description="Log No accounts and products are unkown" message='#[" No Unknown Products and Accounts are found !! "]'/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+	<sub-flow name="insert-unknown-prds-to-azure-flow" doc:id="07b58af5-9e11-4d90-9e40-a9c3b706c519" doc:description="This flow sets the unknown products as payload and insert it to azure." >
+		<set-payload value='#[%dw 2.0
+output application/java
+---
+((payload map ((table , indexOfTable) -&gt; {
+"id": table.ID
+})).id) joinBy "|"]' doc:name="string-payload" doc:id="78b63d98-e031-49e4-8e44-e85557b0fb6e" doc:description="Set payload for current unknown prd batch." />
+		<logger level="INFO" doc:name="log-unknown-prds" doc:id="59042bba-db4a-441f-aed3-8e072fdfd2bb" doc:description="Log unknown prds to be posted." message="Failed prds are====== #[payload]"/>
+		<set-variable value="#[%dw 2.0
+output application/json
+---
+{
+	Session_ID : vars.sessionId,
+	Market : 'NAMarketName',
+	Flow : p('adjAssortment.flow.name'),
+	Component : 'MulesoftComponentName',
+	RecordKeyFieldNames:'Product',
+	RecordKeyFieldValues : payload as String,
+	TableName : p('azure.adjAssortment.errortblupdate.view'),
+	ExceptionMessage : 'Failed Unknown Product Ids from ACPS'
+	
+}]" doc:name="failure-payload" doc:id="3bd36ae4-56fd-43b2-a00b-90d32e889b46" doc:description="Set final failure payload." variableName="azureData" />
+		<flow-ref doc:name="azure-token-retrieve-sub-flow" doc:id="c4ef3fbf-b687-4dc1-8b55-7001747953c2" doc:description="Retrieve azure token flow." name="azure-token-retrieve-sub-flow" />
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt; &lt;soapenv:Header/&gt; &lt;soapenv:Body&gt; &lt;tem:' ++ p('azure.method.name') ++ '&gt; &lt;!--Optional:--&gt; &lt;tem:tableName/&gt; &lt;!--Optional:--&gt; &lt;tem:operatingType&gt;statement&lt;/tem:operatingType&gt; &lt;!--Optional:--&gt; &lt;tem:where/&gt; &lt;tem:data&gt;EXEC ' ++ p('azure.errortblupdate.view') ++ '@Session_ID=\'' ++ vars.sessionId ++ '\', @Market = \'NAMarketName\', @Flow = \'' ++ vars.azureData.Flow ++ '\', @Component = \'MulesoftComponentName\',@RecordKeyFieldNames = \'' ++ vars.azureData.RecordKeyFieldNames ++ '\',@RecordKeyFieldValues = \'' ++ vars.azureData.RecordKeyFieldValues ++ '\',@TableName = \'' ++ vars.azureData.TableName ++ '\',@ExceptionMessage = \'' ++ vars.azureData.ExceptionMessage ++ '\'&lt;/tem:data&gt; &lt;/tem:' ++ p('azure.method.name') ++ '&gt; &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="soap-payload" doc:id="53d7f2ab-4399-4036-87c6-45fe3ecfc5e7" doc:description="Set request for error post to azure." mimeType="text/xml" />
+		<logger level="INFO" doc:name="error-payload-request" doc:id="0a0bdbcf-1e48-45e5-8b82-0ef5f025b700" doc:description="Log error request." message="Failure paylod request : #[payload]"/>
+		<http:request method="POST" doc:name="posting-failure-payload-to-azure" doc:id="d2661b50-d741-4f5c-8d58-7943a93a4725" doc:description="Call azure web service to post error payload to azure error table." config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}" >
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " "  ++ vars.token
+}]]]></http:headers>
+		</http:request>
+		<logger level="INFO" doc:name="azure-response" doc:id="6b8dd248-2d0a-4eb3-b7ed-729f10636125" doc:description="Log azure error response." message="Azure Error Table Response : #[payload]"/>
+	</sub-flow>
+	<sub-flow name="insert-unknown-accnts-to-azure-flow" doc:id="2cc988c0-1f7b-40ab-97fe-390e90979307" doc:description="This flow sets the unknown accounts as payload and insert it to azure." >
+		<set-payload value='#[%dw 2.0
+output application/java
+---
+((payload map ((table , indexOfTable) -&gt; {
+"id": table.ID
+})).id) joinBy "|"]' doc:name="string-payload" doc:id="be62fce2-0cc5-4f0c-91be-bc05ae15be1d" doc:description="Set payload for current bacth of unknown account." />
+		<logger level="INFO" doc:name="log-unknown-accounts" doc:id="d22cd30a-75c4-48ad-afb3-b9a997a13336" doc:description="Log the unknown accounts." message="Failed accounts are====== #[payload]"/>
+		<set-variable value="#[%dw 2.0
+output application/json
+---
+{
+	Session_ID : vars.sessionId,
+	Market : 'NAMarketName',
+	Flow : p('adjAssortment.flow.name'),
+	Component : 'MulesoftComponentName',
+	RecordKeyFieldNames:'Customer',
+	RecordKeyFieldValues : payload as String,
+	TableName : p('azure.adjAssortment.errortblupdate.view'),
+	ExceptionMessage : 'Failed Unknown Account Ids from ACPS'
+	
+}]" doc:name="failure-payload" doc:id="bab6a853-7824-4f0e-8cb4-4adb2574884c" doc:description="Set final payload for unknown accounts to be posted to azure error table." variableName="azureData" />
+		<flow-ref doc:name="azure-token-retrieve-sub-flow" doc:id="377f8e84-ca59-4e93-aafb-5c6872215356" doc:description="Retrieve azure token flow." name="azure-token-retrieve-sub-flow" />
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt; &lt;soapenv:Header/&gt; &lt;soapenv:Body&gt; &lt;tem:' ++ p('azure.method.name') ++ '&gt; &lt;!--Optional:--&gt; &lt;tem:tableName/&gt; &lt;!--Optional:--&gt; &lt;tem:operatingType&gt;statement&lt;/tem:operatingType&gt; &lt;!--Optional:--&gt; &lt;tem:where/&gt; &lt;tem:data&gt;EXEC ' ++ p('azure.errortblupdate.view') ++ '@Session_ID=\'' ++ vars.sessionId ++ '\', @Market = \'NAMarketName\', @Flow = \'' ++ vars.azureData.Flow ++ '\', @Component = \'MulesoftComponentName\',@RecordKeyFieldNames = \'' ++ vars.azureData.RecordKeyFieldNames ++ '\',@RecordKeyFieldValues = \'' ++ vars.azureData.RecordKeyFieldValues ++ '\',@TableName = \'' ++ vars.azureData.TableName ++ '\',@ExceptionMessage = \'' ++ vars.azureData.ExceptionMessage ++ '\'&lt;/tem:data&gt; &lt;/tem:' ++ p('azure.method.name') ++ '&gt; &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="soap-payload" doc:id="906d634c-aa1c-4480-84a5-a798aafde8d8" doc:description="Set request for error payload to be posted to azure error table." mimeType="text/xml" />
+		<logger level="INFO" doc:name="error-payload-request" doc:id="0d531bd5-87d5-490f-ae10-abcdc17e34aa" doc:description="Log request for error payload." message="Failure paylod request : #[payload]"/>
+		<http:request method="POST" doc:name="posting-failure-payload-to-azure" doc:id="adff233f-bcc4-49d0-a92c-843cd476f016" doc:description="Call azure web service to post error payload." config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}" >
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " "  ++ vars.token
+}]]]></http:headers>
+		</http:request>
+		<logger level="INFO" doc:name="azure-response" doc:id="755f5d24-ae9a-4151-83a9-20d368354df8" doc:description="Log azure response after posting error payload." message="Azure Error Table Response : #[payload]"/>
+	</sub-flow>
+</mule>

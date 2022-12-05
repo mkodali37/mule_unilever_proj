@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+	
+	<flow name="azure-to-acps-end-point-check-flow" doc:id="b77f03a2-22e2-4b83-a1ce-3b28902cac67" doc:description="This flow is used to check the if the number of expected batches and processed batches are equal or not. If yes, then close the lazure log with status 1 and semaphore, else cloase the azure log with status 2 and semaphore.">
+		<scheduler doc:name="end-point-check-scheduler" doc:id="06126abb-d1db-4f5f-bccb-5dcddfff6c22" doc:description="This scheduler is used to for the end point check flow and run evey 5 mins after it is enabled">
+			<scheduling-strategy >
+				<cron expression="${end.point.check.cron}"/>
+			</scheduling-strategy>
+		</scheduler>
+		
+		<os:retrieve doc:name="retrieve-cass-deduction-data" doc:id="1573fda1-f4ab-4bd1-b562-16ef1e9ce482" key="endPointData" objectStore="End_point_Object_store" target="endPointData">
+			<os:default-value ><![CDATA[#[%dw 2.0
+output application/java
+---
+[0,0,0,"TPM_Dummy_Flow_Name",0]]]]></os:default-value>
+		</os:retrieve>
+		<ee:transform doc:name="set-data-variables" doc:id="00dabd48-6f33-4d12-b92c-1c7f2e8c3db0" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="sessionId" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.endPointData[2]]]></ee:set-variable>
+				<ee:set-variable variableName="finalCount" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.endPointData[1] as Number]]></ee:set-variable>
+				<ee:set-variable variableName="flowName" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.endPointData[3]]]></ee:set-variable>
+				<ee:set-variable variableName="totalVal" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.endPointData[4] as Number]]></ee:set-variable>
+				<ee:set-variable variableName="Final_Azure_Log_ID" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.endPointData[0]]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<os:retrieve doc:name="retrieve-previous-running-count" doc:id="ce1f832c-528f-4372-aedb-34ee97528316" key="previousDataRunningCount" objectStore="End_point_Object_store" target="previousDataRunningCount">
+			<os:default-value ><![CDATA[#[%dw 2.0
+output application/java
+---
+[-1,-1]]]]></os:default-value>
+		</os:retrieve>
+		<ee:transform doc:name="set-previous-running-count" doc:id="87d16187-1408-4db0-95f8-1d4f91760fb3" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="previousCount" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.previousDataRunningCount[1]]]></ee:set-variable>
+
+				<ee:set-variable variableName="previousRunningCount" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.previousDataRunningCount[0] as Number
+]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<set-variable value="#['adjkpiassortment']" doc:name="filter Id" doc:id="c4fe8ba8-0695-4663-a115-8fa00fc20c87" variableName="filterId"/>
+		<os:retrieve-all-keys doc:name="Retrieve all keys" doc:id="a4f5d7da-d90f-4e7f-b30a-9d3e41ec60f6" objectStore="ObjectStore__Connector_Adj_Kpi_Assortment"/>
+		<ee:transform doc:name="FilterId" doc:id="9db1c4f5-716d-4503-82b4-6dc7c1b17428" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload filter ($ contains vars.filterId) map {
+	
+	'$$' : $
+}."$$"]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable value="#[sizeOf(payload)]" doc:name="set-current-running-count" doc:id="5ef8d14d-8353-43cf-a6c7-c6bff7e77ec7" variableName="currentRunningCount"/>
+		<flow-ref doc:name="azure-to-acps-end-point-check-sub-flow" doc:id="a3285bc4-48ea-4457-93bf-d9fe93b33719" name="azure-to-acps-end-point-check-sub-flow"/>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="2c3ca721-21e6-4b34-adad-6f3e06c43307" >
+				<logger level="INFO" doc:name="Log-exception" doc:id="e8a24917-808b-4fad-9f29-1792515c61b0" message="#[error.description]" category="com.unilever.tpm.na.azure.acps.common.log.exception"/>
+				<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+	
+	message :  error.description,
+	priority : "ERROR"
+
+
+}]' doc:name="set-notification-payload" doc:id="8c2b4826-d243-4c39-92ce-96bb6c458535" />
+				<flow-ref doc:name="generate-cloudhub-notification" doc:id="3f156717-2c3d-4ee7-85bf-d9e4fe3c43d9" name="generate-cloudhub-notification" />
+				<flow-ref doc:name="disable-end-point-check-sub-flow" doc:id="d6ae1648-11f0-40b9-833e-9ff7b1388245" name="disable-end-point-check-sub-flow"/>
+				<flow-ref doc:name="azure-exception-flow" doc:id="45446b50-9a3a-4dfe-b947-277aed7b7aa5" name="azure-exception-flow" />
+				<flow-ref doc:name="clear-end-point-object-store" doc:id="2e5b01ea-5e3b-4295-81c2-e96c7978501e" name="clear-end-point-object-store"/>
+				<os:retrieve-all-keys doc:name="Retrieve all keys" doc:id="d8f72f54-2bbc-4faf-9ba5-506b98d9dcbe" objectStore="ObjectStore__Connector_Adj_Kpi_Assortment"/>
+				<ee:transform doc:name="Filter keys" doc:id="c9e0f246-57ae-4ba8-8ebc-ac003a1364a8" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload filter ($ contains vars.filterId) map {
+	
+	txid : $
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="adj-kpi-assortment-remove-transactions-subflow" doc:id="6fd5de42-946a-4952-8e26-e83da9daf9a1" name="adj-kpi-assortment-remove-transactions-subflow"/>
+				
+				<flow-ref doc:name="route-mq-sub-flow" doc:id="9bf7525c-d446-4883-a680-fa045005379d" name="route-mq-sub-flow"/>
+				
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<sub-flow name="azure-to-acps-end-point-check-sub-flow" doc:id="644dc5f7-8490-4e11-b9a5-d080bad98a88" doc:description="This flow is used to check the end point logic which is to match the number of transaction processed to the total number of trasactions">
+		<choice doc:name="check-previous-running-count" doc:id="9bb92b55-5a71-4b0e-afff-5b7920dfc1d9" >
+			<when expression="#[vars.currentRunningCount == vars.previousRunningCount]">
+				<choice doc:name="check-previous-count" doc:id="716bbc86-b102-470a-89f3-82571e23d96b" >
+					<when expression="#[vars.previousCount &gt; 1]">
+						<logger level="INFO" doc:name="Log-running-count-not-change" doc:id="520078be-d3e6-4286-95f7-f6f257efa9cf" message="!!!!!!!!!!!! RUNNING COUNT SAME FOR THE PAST 3 TIMES - HENCE FAILING THE FLOW !!!!!!!!!!!!!!" category="com.unilever.tpm.na.azure.acps.common.log.running.count.not.change"/>
+						<flow-ref doc:name="disable-end-point-check-sub-flow" doc:id="02c6bc9e-42db-4eeb-b79b-fa1bbc1b1c7e" name="disable-end-point-check-sub-flow" />
+						<flow-ref doc:name="clear-end-point-object-store" doc:id="421a0b5f-2fcb-49e8-ad4f-80893c3c0bfe" name="clear-end-point-object-store" />
+						<flow-ref doc:name="adj-kpi-assortment-to-heroku-end-point-flow" doc:id="e341fde0-4dd1-49c0-b823-60a03fe19f3b" name="adj-kpi-assortment-to-heroku-end-point-flow"/>
+					
+
+</when>
+					<otherwise >
+						<logger level="INFO" doc:name="Log-count" doc:id="ef24b1b1-1af9-4106-b40e-0e72eafb97f0" message="Final Count = #[vars.finalCount] | Current Running Count = #[vars.currentRunningCount] | Previous Running Count = #[vars.previousRunningCount] | Previous Count= #[vars.previousCount]" category="com.unilever.tpm.na.azure.acps.common.log.count"/>
+						<os:store doc:name="update-previous-running-count" doc:id="77b9a106-7545-4afa-9499-06787938f16a" key="previousDataRunningCount" objectStore="End_point_Object_store">
+							<os:value ><![CDATA[#[%dw 2.0
+output application/java
+---
+[vars.previousRunningCount,(vars.previousCount + 1)]]]]></os:value>
+						</os:store>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise >
+			<logger level="INFO" doc:name="Log-count" doc:id="326002ae-aafd-4b32-9174-adc413235b62" message="Final Count = #[vars.finalCount] | Current Running Count = #[vars.currentRunningCount] | Previous Running Count = #[vars.previousRunningCount] | Previous Count= #[vars.previousCount]" category="com.unilever.tpm.na.azure.acps.cass.deduction.functions.log.count"/>
+				<os:store doc:name="update-previous-running-count" doc:id="9be1dda9-dc87-4788-bb10-c71f5da45232" key="previousDataRunningCount" objectStore="End_point_Object_store">
+							<os:value ><![CDATA[#[%dw 2.0
+output application/java
+---
+[vars.currentRunningCount,-1]]]]></os:value>
+						</os:store>
+				<choice doc:name="check-current-and-final-count" doc:id="bace5cd9-d5e6-4942-91e7-9fa8d2f5dacc" >
+					<when expression="#[vars.currentRunningCount == vars.finalCount]">
+						<flow-ref doc:name="disable-end-point-check-sub-flow" doc:id="b6e72fd0-b498-4dbe-bbfd-54dfda237ced" name="disable-end-point-check-sub-flow" />
+						<flow-ref doc:name="clear-end-point-object-store" doc:id="81873fa1-b4f1-4f84-a60f-88598f47f97e" name="clear-end-point-object-store" />
+						<flow-ref doc:name="adj-kpi-assortment-to-heroku-end-point-flow" doc:id="1bc23650-8a4d-4010-be99-6d80792bab19" name="adj-kpi-assortment-to-heroku-end-point-flow"/>
+					
+</when>
+					<otherwise >
+						<logger level="INFO" doc:name="log-end-point-not-reached" doc:id="1a456bb8-6f98-43d0-952c-417a05fb7b9f" message=" END POINT NOT REACHED !!" category="com.unilever.tpm.na.azure.acps.common.log.end.point.not.reached"/>
+					</otherwise>
+				</choice>
+			</otherwise>
+		</choice>
+	</sub-flow>
+	
+	<flow name="adj-kpi-assortment-to-heroku-end-point-flow" doc:id="bb0760e3-e965-4ce6-ad0f-9274499fc57e">
+		<ee:transform doc:name="Txn-properties" doc:id="e2082302-e352-4885-afdd-b3a0a6f65f66">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="successCollection"><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-variable>
+				<ee:set-variable variableName="flowNameVar"><![CDATA[%dw 2.0
+output application/java
+---
+p('adjAssortment.flow.name')]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<until-successful maxRetries="${untilsuccessful.txnmaxretries}" doc:name="Until Successful" doc:id="f0ace5d7-97c1-4801-8355-0fec2c1669c6" millisBetweenRetries="${untilsuccessful.txninterval}">
+			<flow-ref doc:name="adj-kpi-assortment-Heroku-transaction-status-checkFlow" doc:id="1ba5ca81-a772-4fff-8af3-a037585b125f" name="adj-kpi-assortment-Heroku-transaction-status-checkFlow" />
+			<set-variable value="#[sizeOf(vars.UncommittedTransactionCollection)]" doc:name="check-size" doc:id="5782a042-8bb1-45fc-ab04-aba108143517" variableName="chkSize"/>
+			<validation:is-false doc:name="Is false" doc:id="7aaf9452-b3e6-40ea-8290-36e54e4f1526" expression="#[vars.chkSize !=0]" config-ref="Validation_Config"/>
+		
+</until-successful>
+		<set-variable value="#[1]" doc:name="Status" doc:id="6f9977a1-0eb6-4963-bfeb-10326ec71754" variableName="status" />
+		<set-variable value="#['Reading data from Azure and posting to ACPS completed successfully with' ++ '\n' ++ 'No. of rows processed successfully:' ++  vars.successCount ++ '\n' ++ 'No. of rows failed:'  ++ (vars.totalVal - vars.successCount)]" doc:name="messageVar" doc:id="adacd41e-f9c7-4bed-9761-20fc704e26c7" variableName="message" />
+		<logger level="INFO" doc:name="Success Logger" doc:id="72b61bb0-d453-4dfe-9e44-9c198c6b4286" message="'Reading data from Azure  based on unique condition types and posting to Heroku completed successfully with'] #['\n'] No. of rows processed successfully: #[vars.successCount] #['\n'] No. of rows failed: #[(vars.totalVal)-(vars.successCount)]" />
+		<logger level="DEBUG" doc:name="Logging azure ID for Debug purpose" doc:id="d9a83060-e3a0-405c-99cf-cfd50a3cb376" message="The Final Log ID is --------&gt; #[vars.Final_Azure_Log_ID]" />
+		<flow-ref doc:name="adj-kpi-assortment-to-heroku-end-point-sub-flow" doc:id="554e7a4f-cdd9-4a1d-a90f-0b48515e3788" name="adj-kpi-assortment-to-heroku-end-point-sub-flow" />
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="43091dd9-4b21-4e01-b092-54a6f7e20882" >
+				<os:retrieve-all-keys doc:name="Retrieve all keys" doc:id="6b6b4678-dc57-41bf-8da1-ac91b4f0a72c" objectStore="ObjectStore__Connector_Adj_Kpi_Assortment"/>
+				<ee:transform doc:name="Filter keys" doc:id="e7b9f6ca-7d7a-4758-a216-3d683132c373" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload filter ($ contains vars.filterId) map {
+	
+	txid : $
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="adj-kpi-assortment-remove-transactions-subflow" doc:id="7e6960cb-52db-490b-8fb2-2d7aed3549fa" name="adj-kpi-assortment-remove-transactions-subflow"/>
+				<ee:transform doc:name="Setting properties" doc:id="7bf55c7c-f9cd-4680-9583-0786e84c0bcb" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="status" ><![CDATA[%dw 2.0
+output application/java
+---
+2]]></ee:set-variable>
+						<ee:set-variable variableName="errorVar" ><![CDATA[%dw 2.0
+output application/java
+---
+true]]></ee:set-variable>
+						<ee:set-variable variableName="message" ><![CDATA[%dw 2.0
+output application/java
+---
+'Reading data from Azure  based on unique condition types completed but some Heroku transactions are still in uncommitted state']]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<logger level="INFO" doc:name="Failure Logger" doc:id="cacbcaac-6005-42ec-b9b4-b15a53431128" message="'Reading Adj Kpi Assortment data from Azure completed but some Heroku transactions are still in uncommitted state'] #['\n'] No. of rows processed successfully: #[vars.successCount]  #['\n'] No. of rows failed:#[(vars.totalVal)-(vars.successCount)] and total count #[vars.totalVal]"/>
+				<set-variable value="#[vars.Final_Azure_Log_ID]" doc:name="set-azureLogId" doc:id="279e0d28-9b2d-40b0-98aa-8df0edb7f732" variableName="azureLogId"/>
+				<flow-ref doc:name="azure-log-table-update-flow" doc:id="6c1ad95a-f92f-48a4-84bb-556fd42fd245" name="azure-log-table-update-flow"/>
+				<flow-ref doc:name="azure-semaphore-update-flow" doc:id="cf6b832e-96f4-4d57-904d-adfc1e425275" name="azure-semaphore-update-flow"/>
+				<logger level="INFO" doc:name="End Logger" doc:id="03901892-33e8-4151-ad47-0ae827b8bcd2" message="========Interface complete========="/>
+				<flow-ref doc:name="generate-cloudhub-notification" doc:id="9468d219-0876-431c-8979-6ef984f32975" name="generate-cloudhub-notification"/>
+				<flow-ref doc:name="route-mq-sub-flow" doc:id="7e98dfb7-54f4-4560-af7f-7c7a18f622d4" name="route-mq-sub-flow" />
+			
+</on-error-continue>
+		</error-handler>
+	</flow>
+	<sub-flow name="adj-kpi-assortment-to-heroku-end-point-sub-flow" doc:id="e4169a8a-3b8d-42ee-9a4b-87248acdbafd" >
+		<set-variable value="#[vars.Final_Azure_Log_ID]" doc:name="set-azureLogId" doc:id="9860710b-3343-4a9e-999b-a4cff06b0cb3" variableName="azureLogId"/>
+		<flow-ref doc:name="azure-log-table-update-flow" doc:id="c05f7eaa-32db-4430-85f8-4ac993d19755" name="azure-log-table-update-flow"/>
+		<flow-ref doc:name="azure-semaphore-update-flow" doc:id="3f3c6028-d6ff-4359-b29b-a4a3c887f706" name="azure-semaphore-update-flow"/>
+		<flow-ref doc:name="route-mq-sub-flow" doc:id="6c4a9f79-de3e-481b-9649-6cc485c34f42" name="route-mq-sub-flow" />
+		<logger level="INFO" doc:name="end Logger" doc:id="2fd6e65a-ac1e-4993-8ace-6a4a74585f98" message="=== Shipment Actual Indicator Interface is Complete ==="/>
+	</sub-flow>
+	<sub-flow name="clear-end-point-object-store" doc:id="fd475316-48e0-44f4-ac2e-7500fdca6e55" doc:description="This flow is used to clear the object stores for end point check keys" >
+		<os:clear doc:name="clear-end-point-object-store" doc:id="4f15b9f2-307c-4cc8-8640-705329c35a2b" objectStore="End_point_Object_store"/>
+			
+</sub-flow>
+	<sub-flow name="route-mq-sub-flow" doc:id="509b8f85-7cbf-46a2-96a9-f6838989038c" doc:description="This flow is used to route to respective interface mq flow">
+		<choice doc:name="check-flow-name" doc:id="90bb5bf7-830e-4b35-8d29-37637d45fe9b" >
+			<when expression='#[vars.flowName contains ("CASSDeduction")]'>
+				<flow-ref doc:name="ship-spin-indicator-mq-flow" doc:id="492ec585-5a87-44ed-9050-182e5a048e90" name="ship-spin-indicator-mq-flow"/>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="log-message" doc:id="343f86d9-cc74-48ca-9390-ce5da7ce7751" message="Flow Name not set. Trigger not sent to mq !!" category="com.unilever.tpm.na.azure.acps.common.log.message"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+	
+	<sub-flow name="enable-end-point-check-sub-flow" doc:id="7e882918-51ef-41ef-809c-e7ba623e2760" doc:description="This flow is used to set the poll id and call the enable utility flow to start the end point check flow">
+		<set-payload value="#[%dw 2.0
+output application/json
+---
+{
+	&quot;pollId&quot;: p('end.point.check.pollId')	
+}]" doc:name="set-pollId" doc:id="02c64bbd-d205-422c-a92d-746740e042c1" />
+		<flow-ref doc:name="enable-flow" doc:id="346ffa19-ca34-4df8-88e5-aec8a4f9c41a" name="enable-flow"/>
+		<logger level="INFO" doc:name="log-message" doc:id="c0fae3a0-14cb-48c5-9aa1-d8d0ec3b7ea1" message="End Point Check Flow Enabled !!" category="com.unilever.tpm.na.azure.acps.common.log.message"/>
+	</sub-flow>
+	
+	<sub-flow name="disable-end-point-check-sub-flow" doc:id="0e5a7156-583c-4bce-a3bc-72903c07546a" doc:description="This flow is used to set the poll id and call the disable utility flow to stop the end point check flow">
+		<set-payload value="#[%dw 2.0
+output application/json
+---
+{
+	&quot;pollId&quot;: p('end.point.check.pollId')	
+}]" doc:name="set-pollId" doc:id="ef8d94d4-3cc0-4d59-a055-0ed3615f6427" doc:description="This flow is used to set the poll id and call the disable utility flow to stop the end point check flow"/>
+		<flow-ref doc:name="disable-flow" doc:id="9802ae5e-f159-47d3-840c-898f5da999bd" name="disable-flow"/>
+		<logger level="INFO" doc:name="log-message" doc:id="311b6a7f-367a-4378-a6e4-168faa54a6df" message="End Point Check Flow Disabled !!" category="com.unilever.tpm.na.azure.acps.common.log.message"/>
+	</sub-flow>
+	<flow name="enable-flow" doc:id="40b3dfc3-08cd-4ac2-942c-e23709b47962" doc:description="This flow is used to enable the flow using the polling id as parameter and calling the cloudhub api">
+		<set-payload value='#[%dw 2.0
+output application/json
+---
+[{
+	"id" : payload.pollId,
+	"enabled" : true,
+	"runNow" : false
+	
+}]]' doc:name="set-enable-payload" doc:id="03edb5a1-f7c0-4eda-8672-f55416c7f95a" />
+		<http:request method="PUT" doc:name="http-schedule-api" doc:id="773a2689-1fc4-4a35-b222-52c3c51a039e" config-ref="HTTP_CH_Request_configuration" path="${cloudhubapi.schedules.path}" doc:description="Call scheduler Cloudhub Api to enable or disable a scheduler">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"X-ANYPNT-ENV-ID" : p('secure::cloudhubapi.envid'),
+	"Content-Type" : "application/json",
+	client_secret : p('secure::cloudhubapi.clientsecret'),
+	client_id : p('secure::cloudhubapi.clientid'),
+	"X-ANYPNT-ORG-ID" : p('secure::cloudhubapi.orgid')
+}]]]></http:headers>
+			<http:uri-params ><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+	"domain" : p('cloudhubapi.domain')
+}]]]></http:uri-params>
+		</http:request>
+		<logger level="INFO" doc:name="msg-log" doc:id="47fedc98-7d8b-4a54-9741-807316d72b58" message='#["Enabled!!"]' category="com.unilever.tpm.na.utility.enable.scheduler" doc:description="Log Response."/>
+	
+	<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="c2410e02-644d-4f52-a30a-c65a4bba4ae0" >
+				<logger level="INFO" doc:name="log-exception" doc:id="147c7fc5-7a58-43b7-8030-36ac689a44e7" message="#[error.description]" category="com.unilever.tpm.na.utility.log.exception"/>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="disable-flow" doc:id="4a101c36-b65c-462b-b9fb-d58a8e9f5b04" doc:description="This flow is used to disable the flow using the polling id as parameter and calling the cloudhub api">
+		<set-payload value='#[%dw 2.0
+output application/json
+---
+[{
+	"id" : payload.pollId,
+	"enabled" : false,
+	"runNow" : false
+	
+}]]' doc:name="set-disable-payload" doc:id="1b781384-1002-41f9-ac8b-4d302b8d380f" />
+		<http:request method="PUT" doc:name="http-schedule-api" doc:id="4b3a8d98-199d-45ac-83fc-4dd38de322fd" config-ref="HTTP_CH_Request_configuration" path="${cloudhubapi.schedules.path}" doc:description="Call scheduler Cloudhub Api to enable or disable a scheduler">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"X-ANYPNT-ENV-ID" : p('secure::cloudhubapi.envid'),
+	"Content-Type" : "application/json",
+	client_secret : p('secure::cloudhubapi.clientsecret'),
+	client_id : p('secure::cloudhubapi.clientid'),
+	"X-ANYPNT-ORG-ID" : p('secure::cloudhubapi.orgid')
+}]]]></http:headers>
+			<http:uri-params ><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+	"domain" : p('cloudhubapi.domain')
+}]]]></http:uri-params>
+		</http:request>
+		<logger level="INFO" doc:name="msg-log" doc:id="b320625e-1d78-4521-8742-b7b62ae2e285" message="#[payload]" category="com.unilever.tpm.na.utility.disable.scheduler" doc:description="Log Response."/>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="f71820fd-67a2-4dca-b184-f6a6107b58c7" >
+				<logger level="INFO" doc:name="log-exception" doc:id="5c03e049-e119-4317-9688-1e39baa022da" message="#[error.description]" category="com.unilever.tpm.na.utility.log.exception"/>
+			</on-error-propagate>
+		</error-handler>
+	
+	
+	
+</flow>
+	</mule>

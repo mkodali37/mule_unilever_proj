@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<error-handler name="Error_Handler" doc:id="4f8b7621-3e9b-47a1-a709-e42b84104853" >
+		<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="9adf2702-753a-4ddb-8b45-606b1e6f4733" type="ANY">
+			<ee:transform doc:name="form-exception-payload" doc:id="729168a8-b167-4504-b804-a457d3b7abd7" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+
+fun isnull(str) = (if(str == null) "" else str as String)
+---
+{ 
+	"message" :isnull(error.description),
+	"sessionID": isnull(vars.SessionID),
+	"lastSucessfullRunDate" : isnull(vars.lastSucessfullRun),
+	"accountID" : isnull(vars.accountID),
+	"year" : isnull(vars.year),
+	"MeasureCodes" : isnull(vars.measureCode)
+	
+}
+]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<logger level="INFO" doc:name="log-exception-payload" doc:id="036bf38e-fe03-4d4a-8312-125263cc6bef" message="=== Exception Payload === #[payload]"/>
+			<ee:transform doc:name="set-azure-log-variables" doc:id="75dc457a-33ac-4969-9ffa-8eae9de87d67" >
+				<ee:message >
+				</ee:message>
+				<ee:variables >
+					<ee:set-variable variableName="azureLogging" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	message : write(payload , "application/json"),
+	status : 1,
+	stepName : "Error occurred during account KPI flow",
+	flowName : "TPMFlowName_FundTransOutDeltaPBCS"
+}]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+			<choice doc:name="Choice" doc:id="178b76eb-87b1-4b4d-8294-f70f7c1bfb8e" >
+				<when expression="#[vars.sessionID != null]">
+					<set-variable value="#[null]" doc:name="remove-azure-log-id" doc:id="053c959d-218c-4a75-b9ad-491192245fa8" variableName="Azure_Log_ID"/>
+					<flow-ref doc:name="log-to-azure-flow" doc:id="adabdb9a-2cad-4616-95ec-dbb9da75518f" name="log-to-azure-flow" />
+					<flow-ref doc:name="session-closure-flow" doc:id="e368bfac-d270-4744-9400-d70b93ff69ac" name="session-closure-flow"/>
+				</when>
+				<otherwise >
+					<logger level="INFO" doc:name="log-error" doc:id="2c978c66-28dd-4630-a317-655c0bd528fa" message="======== Inside Default route. Error occured in account KPI , Hence Terminating the flow. ========="/>
+				</otherwise>
+			</choice>
+		</on-error-continue>
+	</error-handler>
+</mule>

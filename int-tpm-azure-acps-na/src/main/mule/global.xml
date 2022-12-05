@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq"
+	xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties" xmlns:oauth="http://www.mulesoft.org/schema/mule/oauth" xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/oauth http://www.mulesoft.org/schema/mule/oauth/current/mule-oauth.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd">
+
+<http:request-config name="HTTPS_Request_Configuration_Azure" doc:name="HTTP Request configuration" doc:id="439004c6-dec9-400a-bdc5-0d47951f2ee6" responseTimeout="30000">
+		<http:request-connection protocol="HTTPS" host="${azure.host}" port="${azure.port}" />
+	</http:request-config>
+
+<tls:context name="TLS_Context" doc:name="TLS Context">
+		<tls:key-store type="jks" path="${tls.path}" alias="${tls.alias}"
+			keyPassword="${tls.keypassword}" password="${tls.password}" />
+
+	</tls:context>
+
+	
+	<secure-properties:config name="Secure_Properties_Config" doc:name="Secure Properties Config" doc:id="885c2948-f2a0-4feb-9acf-cc777f07cd9a" 
+	file="${mule.env}.properties" key="Unilever@123#!@9" />
+
+
+
+<http:request-config name="HTTPS_Request_configuration_ACPS" doc:name="HTTP Request configuration" doc:id="d39eb4f3-10f7-445a-a139-1c3a5fa6f73b" responseTimeout="30000">
+        <http:request-connection protocol="HTTPS" host="${heroku.host}" port="${heroku.port}" >
+            <reconnection >
+                <reconnect frequency="6000" count="3" />
+            </reconnection>
+            <tls:context >
+                <tls:key-store type="jks" path="${tls.path}" alias="${tls.alias}" keyPassword="${tls.password}" password="${tls.keypassword}" />
+            </tls:context>
+            <http:authentication >
+                <oauth:authorization-code-grant-type localCallbackUrl="${heroku.redirecturl}" externalCallbackUrl="${heroku.external.redirecturl}" localAuthorizationUrl="${heroku.localauthorizationurl}" authorizationUrl="${heroku.authorizationurl}" clientId="${secure::heroku.clientid}" clientSecret="${secure::heroku.clientsecret}" tokenUrl="${heroku.tokenurl}" refreshTokenWhen="#[attributes.StatusCode==401]">
+                    <tls:context >
+                        <tls:key-store type="jks" path="${tls.path}" alias="${tls.alias}" keyPassword="${tls.keypassword}" password="${tls.password}" />
+                    </tls:context>
+                </oauth:authorization-code-grant-type>
+            </http:authentication>
+        </http:request-connection>
+    </http:request-config>
+
+	
+	
+	
+	
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="97589899-f01e-4d54-b6bd-2c2bbb8ee039" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	
+	<configuration-properties doc:name="Configuration properties" doc:id="0136b029-9dbe-4c2a-8f26-6625e2af074f" file="${mule.env}.properties" />
+	
+	<vm:config name="VM_Account_KPI" doc:name="VM Config" doc:id="c7629594-7102-4dc8-8990-9e2a9f8d8455">
+		<vm:connection >
+			<reconnection >
+				<reconnect-forever />
+			</reconnection>
+		</vm:connection>
+		<vm:queues >
+			<vm:queue queueName="accountkpi" queueType="PERSISTENT"/>
+			<vm:queue queueName="kpidetails"/>
+			<vm:queue queueName="post_data"/>
+			<vm:queue queueName="measure" queueType="PERSISTENT"/>
+			<vm:queue queueName="getkpidata" queueType="PERSISTENT"/>
+			<vm:queue queueName="retry_queue" queueType="PERSISTENT"/>
+			<vm:queue queueName="endPoint" queueType="PERSISTENT"/>
+			<vm:queue queueName="pub_multi"/>
+			<vm:queue queueName="consume_single"/>
+			<vm:queue queueName="multi_page"/>
+		</vm:queues>
+	</vm:config>
+	<configuration doc:name="Configuration" doc:id="bee40ddd-8979-4d09-8cb7-c27d0d1fbd2b" defaultErrorHandler-ref="Error_Handler" />
+	<anypoint-mq:config name="Anypoint_MQ_Config" doc:name="Anypoint MQ Config" doc:id="f6f341a2-f20d-463b-bde8-75ea2dfad46a" >
+		<anypoint-mq:connection clientId="${secure::mq.client.id}" clientSecret="${secure::mq.client.secret}" />
+	</anypoint-mq:config>
+	<vm:config name="VM_MQ" doc:name="VM Config" doc:id="cd76f208-a7b0-4a14-a785-0ad40706578c" >
+		<vm:connection >
+			<reconnection >
+				<reconnect frequency="${untilsuccessful.retryinterval}" count="${untilsuccessful.maxretries}" />
+			</reconnection>
+		</vm:connection>
+		<vm:queues >
+			<vm:queue queueName="${adj.Kpi.Assortment.Vm}" queueType="PERSISTENT" />
+		</vm:queues>
+	</vm:config>
+	<os:config name="Object_store_connector_config" doc:name="ObjectStore Config" doc:id="0efcb687-9582-4ddd-996e-0a04dde2dd8d" >
+		<os:connection >
+			<reconnection >
+				<reconnect frequency="${untilsuccessful.retryinterval}" count="${untilsuccessful.maxretries}" />
+			</reconnection>
+		</os:connection>
+	</os:config>
+	<os:object-store name="ObjectStore__Connector_Adj_Kpi_Assortment" doc:name="Object store" doc:id="10ec09e1-13fa-4134-b7be-cd56de990a10" config-ref="Object_store_connector_config" />
+	<os:object-store name="Object_store_connector_MQ" doc:name="Object store" doc:id="c168a0ea-b1b7-4aed-8c37-a2b424b9966d" config-ref="Object_store_connector_config" />
+	<http:request-config name="HTTP_CH_Request_configuration" doc:name="HTTP Request configuration" doc:id="86935a19-cc06-4ec3-8ee6-0e94d9492905" >
+		<http:request-connection protocol="HTTPS" host="${cloudhubapi.token.host}" port="${cloudhubapi.port}" connectionIdleTimeout="300000" >
+			<reconnection >
+				<reconnect frequency="${untilsuccessful.retryinterval}" count="${untilsuccessful.maxretries}" />
+			</reconnection>
+		</http:request-connection>
+	</http:request-config>
+	<vm:config name="VM_ship_spin_indicator" doc:name="VM Config" doc:id="94733676-958a-42b7-a4f1-9f43f5d3c72e" >
+		<vm:queues >
+			<vm:queue queueName="${ship.spin.indicator.data.queue}" queueType="PERSISTENT" />
+		</vm:queues>
+	</vm:config>
+	<os:object-store name="End_point_Object_store" doc:name="Object store" doc:id="9173c816-89c8-4865-abb5-bf73adedba99" config-ref="Object_store_connector_config" />
+	<validation:config name="Validation_Config" doc:name="Validation Config" doc:id="68203307-7da4-4096-8c03-4a9331660ee8" />
+	
+	
+	
+	
+	
+</mule>

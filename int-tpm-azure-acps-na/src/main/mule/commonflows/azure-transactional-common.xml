@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<flow name="azure-token-retrieve-sub-flow" doc:id="996c22fd-3da5-4fac-b7b1-cf559b3f74d8" >
+		<set-payload value='&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"&gt; &lt;soapenv:Header/&gt; &lt;soapenv:Body&gt; &lt;tem:GetJwtToken&gt; &lt;!--Optional:--&gt; &lt;tem:userName&gt;${secure::azuretoken.username}&lt;/tem:userName&gt; &lt;!--Optional:--&gt; &lt;tem:password&gt;${secure::azuretoken.password}&lt;/tem:password&gt; &lt;/tem:GetJwtToken&gt; &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;' doc:name="token-request" doc:id="b53d34f2-6793-40bf-812e-e386dfc9f0e1" doc:description="Set payload for token request." mimeType="text/xml" />
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Retry" doc:id="1d3f39b7-cfe5-48ce-a4c2-8b7db854a356" millisBetweenRetries="${untilsuccessful.retryinterval}">
+			<http:request method="POST" doc:name="azure-token-service" doc:id="74542dbd-8659-4f6a-a900-710828cddf81" doc:description="Connect to azure token service." config-ref="HTTPS_Request_Configuration_Azure" path="${azure.tokengeneration.path}" />
+		</until-successful>
+		<set-variable value="#[%dw 2.0
+output application/json
+---
+payload.Envelope.Body.GetJwtTokenResponse.GetJwtTokenResult]" doc:name="set-token" doc:id="7d020f04-eca9-4413-b306-460d59369a91" doc:description="Set token variable for azure." variableName="token" />
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="42091756-45a5-4dba-8674-28698e63bfa5" >
+				<logger level="INFO" doc:name="log-exception" doc:id="0bce047c-e9f0-46d1-9cce-04595a070cd3" message="Exception in AzureToken Generation Flow !! Propagating Error !! #[error.description]" category="com.unilever.tpm.na.common" />
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="get-azure-session-flow" doc:id="2e931b98-ace8-487a-982c-a2acc4b88b14" >
+		<flow-ref doc:name="azure-token-retrieve-sub-flow" doc:id="30cdcf7b-3ce4-47df-a4aa-0ffade3947e7" doc:description="Call azure token retrieve flow." name="azure-token-retrieve-sub-flow" />
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt; &lt;soapenv:Header/&gt; &lt;soapenv:Body&gt; &lt;tem:' ++ p('azure.method.name') ++ '&gt; &lt;tem:tableName&gt;${azure.adjAssortment.getSession.view}&lt;/tem:tableName&gt; &lt;tem:operatingType&gt;select&lt;/tem:operatingType&gt; &lt;tem:where&gt;&lt;/tem:where&gt; &lt;tem:data&gt;&lt;/tem:data&gt; &lt;/tem:' ++ p('azure.method.name') ++ '&gt; &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="azure-session-request" doc:id="dc4b4541-ab9a-4798-96f7-1886c3e49a40" doc:description="Set azure session request." mimeType="text/xml" />
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Retry" doc:id="bcb29c8f-a0a4-4398-ad74-966870b523c8" millisBetweenRetries="${untilsuccessful.retryinterval}">
+			<http:request method="POST" doc:name="fetch-azure-session" doc:id="2a8cb8bc-9bd7-48d2-9c8c-b84708442c2f" doc:description="Fetch azure session." config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+		</http:request>
+		</until-successful>
+		<logger level="DEBUG" doc:name="Logging session details for debug" doc:id="ee18aed4-19d6-4ec9-b4ba-a4f41d1102b2" message="Session Details from Azure===#[payload]" />
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="532aeffe-d476-437e-a23a-cabc98b8a2ba" >
+				<logger level="INFO" doc:name="log-exception" doc:id="ab5f0fb8-5ff8-4c0d-b0e2-65171569ae05" message="Exception in Azure get Session Flow !! Propagating Error !! #[error.description]" category="com.unilever.tpm.na.common" />
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<sub-flow name="azure-log-table-update-flow" doc:id="cc438661-7d7e-4cf9-95d8-c06797b9e844" doc:description="This flow is used to update the log table in azure with the log table entries." >
+		<flow-ref doc:name="azure-token-retrieve-sub-flow" doc:id="f77b7f1d-1f52-4167-9965-f56faf284e51" doc:description="Call retrieve token from azure flow" name="azure-token-retrieve-sub-flow" />
+		<set-payload value="#[%dw 2.0
+	output application/java
+	---
+	'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt; &lt;soapenv:Header /&gt; &lt;soapenv:Body&gt; &lt;tem:MaintainLog&gt; &lt;tem:id&gt;' ++ (if (vars.azureLogId == null) &quot;&quot; else vars.azureLogId as String) ++ '&lt;/tem:id&gt;          &lt;tem:sessionId&gt;' ++ (if (vars.azureLogId == null) vars.sessionId as String else &quot;&quot;) ++ '&lt;/tem:sessionId&gt;          &lt;tem:stepName&gt;' ++ (if (vars.azureLogId == null) vars.stepName else &quot;&quot;) ++ '&lt;/tem:stepName&gt;          &lt;tem:market&gt;' ++ (if (vars.azureLogId == null) 'NAMarketName' else &quot;&quot;) ++ '&lt;/tem:market&gt;          &lt;tem:flow&gt;' ++ (if (vars.azureLogId == null) 'TPMFlowName_ShipSpinConditionOutput' else &quot;&quot;) ++ '&lt;/tem:flow&gt;          &lt;tem:component&gt;' ++ (if (vars.azureLogId == null) 'MulesoftComponentName' else &quot;&quot;) ++ '&lt;/tem:component&gt;          &lt;tem:status&gt;' ++ (if (vars.azureLogId == null) '0' else vars.status as String) ++ '&lt;/tem:status&gt;          &lt;tem:logMessage&gt;' ++ (if (vars.azureLogId == null) &quot;&quot; else vars.message) ++ '&lt;/tem:logMessage&gt; &lt;/tem:MaintainLog&gt;    &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="soap-payload" doc:id="3d53de2a-3682-42ab-9ff3-e6b605e14544" doc:description="Set log table request payload." mimeType="text/xml" />
+		<logger level="DEBUG" doc:name="log-table-request" doc:id="effe9f21-37af-46f6-9e41-6bcffb817dc9" doc:description="Log request payload." message="Log Table SOAP Request:  #[payload]"/>
+		<until-successful maxRetries="5" doc:name="Until Successful" doc:id="2d7dd0bf-1bad-45f7-8a5d-e86ad3be3afb" >
+			<http:request method="POST" doc:name="azure-log-update" doc:id="b987f1c2-f9ec-4aa5-874d-79372ee8c7cd" doc:description="Connect azure to update the log table." config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+		</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="log-table-response" doc:id="b6c4e997-cab2-42d5-919d-a1e40fd9493f" doc:description="Log azure update log table response." message="Log Table Response :  #[payload]"/>
+		<set-variable value="#[payload.OutputTable.Output[0]]" doc:name="set-log-id" doc:id="907ecb5a-b1d6-4022-90f0-4ea5572c66ab" doc:description="Set log id variable." variableName="azureLogId" />
+	</sub-flow>
+	<flow name="azure-semaphore-update-flow" doc:id="73d83ab2-3737-4c6f-b4bd-ecf06001e2b4" >
+		<flow-ref doc:name="azure-token-retrieve-sub-flow" doc:id="7a12a55a-a7a1-4874-b67c-2746361120ae" doc:description="Call retrieve token from azure flow" name="azure-token-retrieve-sub-flow" />
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt; &lt;soapenv:Header/&gt; &lt;soapenv:Body&gt; &lt;tem:UNLExecuteAction&gt; &lt;tem:tableName&gt;&lt;/tem:tableName&gt; &lt;tem:operatingType&gt;statement&lt;/tem:operatingType&gt; &lt;tem:where&gt;&lt;/tem:where&gt; &lt;tem:data&gt;EXEC ' ++ ' ' ++ p('azure.updateSemaphore.view') ++ ' ' ++  '@Session_ID=' ++ vars.sessionId ++ ',@Market = NAMarketName ,@Flow = TPMFlowName_ShipSpinConditionOutput ,@Component = MulesoftComponentName ,@CanStart =0&lt;/tem:data&gt;       &lt;/tem:UNLExecuteAction&gt;    &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="semaphore-request" doc:id="ef8b3299-005a-444a-8633-b00f80267545" doc:description="Set semaphore request." mimeType="text/xml" />
+		<logger level="DEBUG" doc:name="log-semaphore-request" doc:id="02cfc1ab-ddd4-4a59-bc64-3c629394461f" doc:description="Log semaphore request." message="SOAP Request for Semaphore update ====#[payload]" />
+		<http:request method="POST" doc:name="azure-semaphore-update" doc:id="b8f5fc7a-55c6-45c9-a08a-1d0b035ecf0c" doc:description="Connect azure to update the semaphore table." config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+		</http:request>
+		<logger level="INFO" doc:name="semaphore-response" doc:id="97645ab5-a8d7-4f05-8580-8067751b41c9" doc:description="Log Semaphore response." message="Semaphore Response===  #[payload]" />
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="392fb4c2-149c-4934-bedc-5c2fcd561f42" >
+				<logger level="INFO" doc:name="log-exception" doc:id="424d330c-afd5-4552-9d1f-f875d2934ec4" message="Exception in Azure get Session Flow !! Propagating Error !! #[error.description]" category="com.unilever.tpm.na.common" />
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="azure-exception-flow" doc:id="b448ea6c-a193-4b24-b761-6fed8e75c397" >
+		<flow-ref doc:name="azure-token-retrieve-sub-flow" doc:id="369f38ca-5b5b-40cb-a267-c1a7adfc369d" doc:description="Retrieve token from azure." name="azure-token-retrieve-sub-flow" />
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt;
+   &lt;soapenv:Header/&gt;
+   &lt;soapenv:Body&gt;
+      &lt;tem:UNLExecuteAction&gt;
+         &lt;!--Optional:--&gt;
+         &lt;tem:tableName&gt;&lt;/tem:tableName&gt;
+         &lt;!--Optional:--&gt;
+         &lt;tem:operatingType&gt;statement&lt;/tem:operatingType&gt;
+         &lt;!--Optional:--&gt;
+         &lt;tem:where&gt;&lt;/tem:where&gt;
+         &lt;!--Optional:--&gt;
+         &lt;tem:data&gt;EXEC' ++  ' ' ++ p('azure.log.force.close') ++ ' ' ++ &quot;@flow='&quot; ++ vars.flowName  ++ &quot;',@component='MulesoftComponentName'&lt;/tem:data&gt;
+      &lt;/tem:UNLExecuteAction&gt;
+   &lt;/soapenv:Body&gt;
+&lt;/soapenv:Envelope&gt;&quot;]" doc:name="soap-payload" doc:id="08b11527-42fa-48fa-a469-a8ad4432a191" doc:description="Set payload for force closure." mimeType="text/xml" />
+		<logger level="DEBUG" doc:name="log-table-request" doc:id="f670dc5f-b92d-4d80-a7d2-b906b4b3fe20" doc:description="Log request payload" message="Log Table SOAP Request:  #[payload]" />
+		<http:request method="POST" doc:name="log-force-closure" doc:id="2c730e80-06ec-4ba2-bf4b-45a9e70407c2" doc:description="Call azure to execute foce closure procedure." config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+			<http:headers><![CDATA[#[%dw 2.0
+output text/xml
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+		</http:request>
+		<logger level="INFO" doc:name="log-table-response" doc:id="472ac3b4-f27b-4ab2-970a-62a511623d10" doc:description="Log azure response." message="Log Table Response :  #[payload]" />
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="1cf3827b-0de5-49a9-8f63-986dde58d3aa" >
+				<logger level="INFO" doc:name="log-exception" doc:id="49dc0f90-ac33-4f8f-ba05-6ee06d8194f6" message="Exception in Azure Global Force Close Flow !! Propagating Error !! #[error.description]"/>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="generate-cloudhub-notification" doc:id="c711ced4-276c-4d8d-9650-bb1daa910fcc" doc:description="This flow is used to generate cloudhub notifications in case of failure." >
+		<ee:transform doc:name="Set Notification Payload" doc:id="46981f3e-0857-485d-ba3a-5f5e7f990d52" >
+			<ee:message >
+				<ee:set-payload resource="dwls/chnotification/notification.dwl" />
+			</ee:message>
+		</ee:transform>
+		<logger level="DEBUG" doc:name="Log-input-payload" doc:id="eb99bb14-42c7-414d-9170-d2ef32fd3722" message="Message :: #[payload]" category="com.unilever.tpm.dach.ch.notification" />
+		<http:request method="POST" doc:name="Generate-cloudhub-Notification" doc:id="2132386e-c1c9-46fd-86bd-f983e9051659" config-ref="HTTP_CH_Request_configuration" path="${cloudhubapi.notification.path}" >
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"X-ANYPNT-ENV-ID" : p('secure::cloudhubapi.envid'),
+	"Content-Type" : "application/json",
+	"client_secret" : p('secure::cloudhubapi.clientsecret'),
+	"client_id" : p('secure::cloudhubapi.clientid'),
+	"X-ANYPNT-ORG-ID" : p('secure::cloudhubapi.orgid')
+}]]]></http:headers>
+		</http:request>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="23e295f5-1b9c-411a-84ee-247427b19989" >
+				<logger level="INFO" doc:name="Log-notification-error" doc:id="61f0b17d-d0da-45f5-8d1a-f9af1134d5af" message="Error occurred in raising notification flow" />
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+</mule>

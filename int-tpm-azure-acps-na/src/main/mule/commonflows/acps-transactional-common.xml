@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<flow name="register-acps-transaction-id-flow" doc:id="3ed8eabe-b475-42df-a6bd-025e746c4e5c" doc:description="It generates a random number transaction id and registers it in acps." >
+		<set-payload value="#[null]" doc:name="remove-payload" doc:id="e58ca185-94c2-41f4-8c8a-16023b2585e5" doc:description="Clear Payload." />
+		<ee:transform doc:name="generate-txn-id" doc:id="1f2c548a-8c98-46f1-80fd-42518433f399" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="transactionId" ><![CDATA[%dw 2.0
+output application/java
+---
+((randomInt(random() * 99999))as String) ++ ((randomInt(random() * 9999999))as String) ++ ((randomInt(random() * 9999999))as String) as Number]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Until Successful" doc:id="996c1a81-97c9-47a9-83f1-1d26d9eb2567" millisBetweenRetries="${untilsuccessful.retryinterval}" >
+			<http:request method="POST" doc:name="register-acps-txn-id" doc:id="e21e6c58-6c9b-46cf-a2fb-f9eb66e8dd8d" doc:description="Connect to ACPS api for registering transaction id." config-ref="HTTPS_Request_configuration_ACPS" path="${trans.path}" responseTimeout="600000" >
+				<http:query-params ><![CDATA[#[output application/java
+---
+{
+	messages : vars.noOfMessages,
+	transaction : vars.transactionId
+}]]]></http:query-params>
+			</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="acps-response" doc:id="cf31902c-b5ff-4fb0-b811-53753fd1c91b" doc:description="ACPS response after registering transaction id." message="ACPS response for registering txn id===  #[vars.transactionId] ===is===#[payload]" category="com.unilever.tpm.eu.common" />
+		<set-payload value="#[vars.transactionId]" doc:name="store-txn-id" doc:id="38c7e77c-e326-4c9d-85ee-e0e0440601a5" doc:description="Set transaction id." />
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="f4d84ccb-dd2f-4e9a-b6b3-b56d28061097" >
+				<logger level="INFO" doc:name="error-log" doc:id="20ae0277-b4de-40c3-9796-1afc66d6f86a" message="====Error occurred in Register transaction flow===="/>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<sub-flow name="decider-to-call-acps-check-status-flow" doc:id="f6d0dfdb-3562-4fe9-b99a-6a5b24f32467" doc:description="This flow is used to check committed and uncommitted txns and post unknown data to azure." >
+		<ee:transform doc:name="check-committed-and-uncommitted-txns" doc:id="b79ab670-64ab-4def-9d52-35dc125c35f9" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="successCount" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.successCount + ( if ((sizeOf (payload filter (($.state == 'COMMITTED') and ($.details.rows_processed > 0)))) > 0) (sum (payload filter (($.state == 'COMMITTED') and ($.details.rows_processed > 0)) map ((payload01 , indexOfPayload01) -> {
+	
+	sum:payload01.details.rows_processed
+	
+}.sum)))  else 0)]]></ee:set-variable>
+				<ee:set-variable variableName="unCommitted" ><![CDATA[%dw 2.0
+output application/java
+---
+payload filter ($.state != 'COMMITTED') and ($.state != 'REJECTED') map ((payload01 , indexOfPayload01) -> {
+	txid: vars.filterId ++ payload01.txid,
+	state: payload01.state
+})]]></ee:set-variable>
+				<ee:set-variable variableName="failedPrds" ><![CDATA[%dw 2.0
+output application/json
+---
+if (((sizeOf (payload filter (($.state == 'COMMITTED') and ( ($.details.rejected.unknown_products) != null)))) > 0)) (flatten (payload filter (($.state == 'COMMITTED') and ( ($.details.rejected.unknown_products) != null)) map ((payload01 , indexOfPayload01) -> {
+	unknwnPrd : payload01.details.rejected.unknown_products map {
+		
+		ID : $.prd,
+		ErrorMessage : 'Failed Unknown Product Ids from Heroku'
+	}
+}.unknwnPrd))) else null
+]]></ee:set-variable>
+				<ee:set-variable variableName="failedAccounts" ><![CDATA[%dw 2.0
+output application/json
+---
+if (((sizeOf (payload filter (($.state == 'COMMITTED') and ( ($.details.rejected.unknown_accounts) != null)))) > 0)) (flatten (payload filter (($.state == 'COMMITTED') and ( ($.details.rejected.unknown_accounts) != null)) map ((payload01 , indexOfPayload01) -> {
+	unknwnAcc : payload01.details.rejected.unknown_accounts map {
+		
+		ID : $.acc,
+		ErrorMessage : 'Failed Unknown Account Ids from Heroku'
+	}
+}.unknwnAcc)))  else null
+]]></ee:set-variable>
+				<ee:set-variable variableName="committedSuccess" ><![CDATA[%dw 2.0
+output application/java
+---
+payload filter ($.state == 'COMMITTED') map ((payload01 , indexOfPayload01) -> {
+	txid: vars.filterId ++ payload01.txid,
+	state: payload01.state
+})]]></ee:set-variable>
+				<ee:set-variable variableName="rejected" ><![CDATA[%dw 2.0
+output application/java
+---
+payload filter ($.state == 'REJECTED') map ((payload01 , indexOfPayload01) -> {
+	txid: vars.filterId ++ payload01.txid,
+	state: payload01.state
+})]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="decider-to-call-acps-check-status-sub-flow" doc:id="fcab1463-dad0-474f-94af-95c4fa3f45aa" doc:description="Call decider to ACPS check status sub flow." name="decider-to-call-acps-check-status-sub-flow" />
+		<flow-ref doc:name="unknown-accnts-and-prds-post-to-azure-flow" doc:id="7ddef611-251c-4468-839d-bbad554a7fc2" doc:description="Call unknown accounts and products post to azure flow." name="unknown-accnts-and-prds-post-to-azure-flow" />
+	</sub-flow>
+	<sub-flow name="decider-to-call-acps-check-status-sub-flow" doc:id="3e0c20f9-0d73-4bf3-a09c-0c6b232dd534" doc:description="This flow checks how many transactions are uncommitted and add those transactions to the uncommitted arraylist" >
+		<choice doc:name="choice-to-continue-or-process-same-flow-again" doc:id="ad6eeed0-41f2-42ec-a287-0fcf6a066973" >
+			<when expression="#[sizeOf(vars.unCommitted) == 0 and sizeOf(vars.committedSuccess) &gt; 0 and sizeOf(vars.rejected) == 0]" >
+				<set-payload value="#[vars.committedSuccess]" doc:name="all-committed-transactions" doc:id="25f7aa63-f28d-4131-805a-d8746ca9aa52" doc:description="Set payload for all committed transactions." />
+				<flow-ref doc:name="adj-kpi-assortment-remove-transactions-subflow" doc:id="5c0fbf27-12ba-4217-809a-95d40f4b9968" name="adj-kpi-assortment-remove-transactions-subflow"/>
+				<logger level="INFO" doc:name="all-transaction-committed" doc:id="29a4551c-c76f-4f41-aab2-3e6821b8a4a0" doc:description="Log all transactions are committed." message='#["===== All acps transaction are committed ====="]'/>
+			</when>
+			<when expression="#[sizeOf(vars.unCommitted) &gt; 0 and sizeOf(vars.committedSuccess) &gt; 0 and sizeOf(vars.rejected) == 0]" >
+				<set-payload value="#[vars.committedSuccess]" doc:name="partially-committed-transactions" doc:id="0d2defb2-d9db-4e99-9ad8-f70a710c3411" doc:description="Set payload for partially committed transactions." />
+				<flow-ref doc:name="adj-kpi-assortment-remove-transactions-subflow" doc:id="24a774b2-e426-4d0a-a361-a094362185a7" name="adj-kpi-assortment-remove-transactions-subflow"/>
+				<set-variable value="#[%dw 2.0
+output application/java
+---
+vars.uncommittedTransactionCollection ++ vars.unCommitted]" doc:name="add-uncommitted-transaction-into-collection" doc:id="91c23b8f-4bbd-454b-8361-1ff3751fadb8" doc:description="Add uncommitted txns to  uncommitted txns array list." variableName="UncommittedTransactionCollection" />
+			</when>
+			<when expression="#[sizeOf(vars.unCommitted) &gt; 0 and sizeOf(vars.committedSuccess) == 0 and sizeOf(vars.rejected) == 0]" >
+				<logger level="INFO" doc:name="none-transactions-committed" doc:id="01896247-588d-42d0-887c-cdd212b2b2f2" doc:description="No txnx committed Logger." message='#["===== None transaction committed ====="]'/>
+				<set-variable value="#[%dw 2.0
+output application/java
+---
+vars.uncommittedTransactionCollection ++ vars.unCommitted]" doc:name="add-uncommitted-transaction-to-collection" doc:id="252d7a2c-56ce-4316-b8da-3aae68c3343f" doc:description="Add uncommkitted txns to uncommitted txn array." variableName="uncommittedTransactionCollection" />
+			</when>
+			<otherwise >
+				<set-payload value="#[vars.rejected]" doc:name="rejected-transaction" doc:id="b7fc3692-6dd6-4b89-b7ae-e932e12c2b53" doc:description="Set payload for rejected transaction." />
+				<flow-ref doc:name="adj-kpi-assortment-remove-transactions-subflow" doc:id="c7f10764-431f-45cb-9fee-c46539d2a41e" name="adj-kpi-assortment-remove-transactions-subflow"/>
+				<choice doc:name="check-committed-transaction" doc:id="9ccb6c83-c3a3-470a-ba5c-76f7401cd560" doc:description="Check for any rejected txns." >
+					<when expression="#[sizeOf(vars.committedSuccess) &gt; 0]" >
+						<set-payload value="#[vars.committedSuccess]" doc:name="partially-committed-trasaction" doc:id="e0457766-2ed2-485b-930b-f6cdd65c0a46" doc:description="Set payload for partially committed transactions." />
+						<flow-ref doc:name="adj-kpi-assortment-remove-transactions-subflow" doc:id="0affede1-eb07-4662-be03-b569605939e9" name="adj-kpi-assortment-remove-transactions-subflow"/>
+						<logger level="INFO" doc:name="some-transaction-rejected" doc:id="fd6e628a-e223-4879-97e3-aa3e3f89b357" doc:description="Log Rejected transactions." message='#["===== Some transactions were rejected ====="]'/>
+					</when>
+					<otherwise >
+						<logger level="INFO" doc:name="all-transaction-rejected" doc:id="a23f7f7b-a2c7-4d81-9883-e48ebc7c2714" doc:description="Log rejected transactions." message='#["===== All transactions were rejected ====="]'/>
+					</otherwise>
+				</choice>
+			</otherwise>
+		</choice>
+	</sub-flow>
+</mule>

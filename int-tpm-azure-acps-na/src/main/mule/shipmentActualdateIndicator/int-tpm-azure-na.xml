@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<flow name="POLL-flow" doc:id="f89ed0ea-cce9-4ba2-99c7-8560f93d4fcb" >
+		<scheduler doc:name="Scheduler" doc:id="52cad505-78f6-45cf-bb2b-bc230b89776c" >
+			<scheduling-strategy >
+				<cron expression="${cron.adjAssortment}"/>
+			</scheduling-strategy>
+		</scheduler>
+		<logger level="INFO" doc:name="log-start" doc:id="22f24ba4-a861-422b-b5a0-0b154df2898c" message="=== Started Shipment Actual Indicator Flow ==="/>
+		<os:store doc:name="ObjectStoreMQ" doc:id="fd7d5d08-6796-423a-9d20-38e6ec24a33b" key="isTriggeredByMQ" objectStore="Object_store_connector_MQ">
+			<os:value ><![CDATA[#[false]]]></os:value>
+		</os:store>
+		<set-payload value="#[1]" doc:name="Set Message" doc:id="9b2aa1fb-f2b2-4c7a-9e82-80c93ae5e09c" />
+		<vm:publish queueName="${adj.Kpi.Assortment.Vm}" doc:name="VM_Publish" doc:id="63e7159f-cc37-46e6-9a55-e3e396eeb5a7" config-ref="VM_MQ" timeout="10"/>
+	</flow>
+	<!-- <flow name="AnypointMQ_Flow" doc:id="fe6fb23a-15e9-4ae8-810c-6125fde49492" >
+		<anypoint-mq:subscriber doc:name="Subscriber" doc:id="545bc9f4-dbf3-4a67-b9fd-87a4ad055e65" config-ref="Anypoint_MQ_Config" destination="${mq.azure.adj.kpi.assortment}"/>
+		<logger level="INFO" doc:name="Log start" doc:id="ea4a78f3-344c-4494-8ea7-596775029fdf" message="=========Interface starts from MQ========"/>
+		<os:store doc:name="Object_Store_MQ" doc:id="41a15e48-fbe3-4bc0-bd1b-e9c17c5c5a7f" key="isTriggeredByMQ" objectStore="Object_store_connector_MQ">
+			<os:value ><![CDATA[#[true]]]></os:value>
+		</os:store>
+		<vm:publish doc:name="VM_Publish" doc:id="b82d60ca-78df-4401-9073-c425aff589d0" config-ref="VM_MQ" queueName="${adj.Kpi.Assortment.Vm}"/>
+	</flow> -->
+	<flow name="adjustment-kpi-assortment-flow" doc:id="1fd692b3-a12b-428d-8f0f-0e3c9484914c" >
+		<vm:listener queueName="${adj.Kpi.Assortment.Vm}" doc:name="VM_Listener" doc:id="81fd9469-0a48-40d8-b4ca-1795c0d14051" config-ref="VM_MQ" timeout="10"/>
+		<flow-ref doc:name="adjustment-kpi-assortment-object-store-clear-flow" doc:id="c569ec70-dfc8-4d81-bb0f-1b188d3fcd6c" name="adjustment-kpi-assortment-object-store-clear-flow"/>
+		<set-variable value="${adjAssortment.flow.name}" doc:name="set-flowName" doc:id="00fc92f2-15a2-43dc-a8a7-27d0aa1a08d7" variableName="flowName"/>
+		<flow-ref doc:name="get-azure-session-flow" doc:id="64e6833e-74b7-46b8-bfb3-1566496f3519" doc:description="Call azure session flow." name="get-azure-session-flow" />
+		<choice doc:name="Check-null-session" doc:id="4a895291-8b80-491a-b59b-6b0b44c1992e" doc:description="Check null session.">
+		<when expression="#[payload.Table.Session_ID[0] != null]">
+				<set-variable value="#[payload.Table.Session_ID[0]]" doc:name="session-id" doc:id="8d9441e9-cb17-4e6e-828b-dfa8c62a7d23" doc:description="Set session id." variableName="sessionId" />
+				<logger level="INFO" doc:name="session-response" doc:id="49f87cd2-b3bf-4f9e-ba43-5b4d9673c159" doc:description="Log Session Response." message="#[%dw 2.0
+output application/json
+---
+'SessionId from session response is :' ++ vars.sessionId]" category="com.unilever.tpm.eu.common" />
+				<flow-ref doc:name="get-measures-azure-flow" doc:id="faff70d6-7e78-47c9-a90e-5c34af658828" name="get-measures-azure-flow" />
+				<flow-ref doc:name="enable-end-point-check-sub-flow" doc:id="93adcdae-8a9a-40b5-bbb5-a70b32b4327c" name="enable-end-point-check-sub-flow" target="endpointtarget" />
+				<foreach doc:name="For Each" doc:id="b05090a4-3a16-4fd6-b035-923583f8f085">
+			<set-variable value="#[(p('adjAssortment.from.records')) as Number]" doc:name="from_records" doc:id="1b06c496-4958-40f8-bc76-30cb33e0d59c" variableName="from_records" />
+			<set-variable value="#[(p('adjAssortment.to.records')) as Number]" doc:name="to_records" doc:id="175f77b9-47b5-4803-8529-d5611b89e2bc" variableName="to_records" />
+			<flow-ref doc:name="adj-kpi-assortment-get-measures-based-data-flow" doc:id="b6d70b52-e812-43cf-a188-561cc08614be" name="adj-kpi-assortment-get-measures-based-data-flow" />
+		</foreach>
+		
+		
+		</when>
+		<otherwise>
+				<logger level="INFO" doc:name="no-session" doc:id="605a0aaf-a96e-402d-8580-48adfce6b126" doc:description="No Session Log." message="No session found !!" />
+				<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+       message : "No Session found !!",
+       priority : "INFO"
+
+}]' doc:name="Notification-msg" doc:id="12494e3f-9073-4f44-b08c-1e0fe3fbb464" />
+				<flow-ref doc:name="generate-cloudhub-notification" doc:id="cbad0ae5-6053-4bc5-a883-34fb74be771e" name="generate-cloudhub-notification" />
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="adjustment-kpi-assortment-object-store-clear-flow" doc:id="aa56e58b-375a-4d28-bbb2-f68114b1c36b" >
+		<set-variable value="#['adjkpiassortment']" doc:name="Set Variable -Filter ID" doc:id="da2afce9-6c8f-4399-bd4b-4ed08cd571b4" variableName="filterId"/>
+		<os:retrieve-all-keys doc:name="Retrieve all keys" doc:id="40288c71-329f-45cc-876e-dce93492f842" objectStore="ObjectStore__Connector_Adj_Kpi_Assortment"/>
+		<ee:transform doc:name="filter keys" doc:id="12dbde14-de97-40da-88bb-02939a0ce9c4" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload filter ($ contains vars.filterId) map {
+	
+	txid : $
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="adj-kpi-assortment-remove-transactions-subflow" doc:id="2d5e3262-4b28-4708-b1cb-a28b410814cb" name="adj-kpi-assortment-remove-transactions-subflow"/>
+	</flow>
+	<flow name="adj-kpi-assortment-get-measures-based-data-flow" doc:id="b5a3b0a5-4e4a-4e24-aa8f-fac8717370cf">
+		<ee:transform doc:name="Build Count Array" doc:id="5a8dbdf6-a2e4-4543-95a8-847d9edd729b">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+(1 to (ceil ((payload.count as Number)/(vars.to_records as Number)))) map {
+	'$$' : $
+}."$$"]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="currentCode"><![CDATA[%dw 2.0
+output application/java
+---
+payload.codes]]></ee:set-variable>
+				<ee:set-variable variableName="currentSalesorg" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.salesorg]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<foreach doc:name="For-Each-measure" doc:id="599c3160-536b-4f44-aa8f-b19905aea201">
+			<try doc:name="Try" doc:id="7d872d8d-df76-4bb0-a4dc-ddfe808b1596">
+				<flow-ref doc:name="azure-token-retrieve-sub-flow" doc:id="fa6d145f-7c2a-4700-8148-f7fe3409c30e" name="azure-token-retrieve-sub-flow" />
+				<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt;    &lt;soapenv:Header /&gt;    &lt;soapenv:Body&gt;       &lt;tem:UNLExecuteAction&gt;          &lt;tem:tableName&gt;' ++ p('azure.adjAssortment.getData.condition.Table') ++ '&lt;/tem:tableName&gt;          &lt;tem:operatingType&gt;select&lt;/tem:operatingType&gt;          &lt;tem:where&gt;[{&quot;MeasureCode&quot;:&quot;' ++ vars.currentCode ++ '&quot;,&quot;SalesOrg&quot;:&quot;' ++ vars.currentSalesorg ++ '&quot;,&quot;Seq&quot;: &quot;&gt;=' ++ vars.from_records ++ '|&amp;lt;=' ++ vars.to_records ++'&quot;}]&lt;/tem:where&gt;          &lt;tem:data&gt;&lt;/tem:data&gt;       &lt;/tem:UNLExecuteAction&gt;    &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="request data per condition types" doc:id="b6b87eb2-2658-4e8f-a82f-40deb07a517a" mimeType="text/xml"/>
+				<logger level="DEBUG" doc:name="Log SOAP request" doc:id="b1717bd1-2c29-4b3b-bf8f-f85d5d9f0be5" message="#[payload]" />
+				<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Until Successful" doc:id="fe2e0022-91fc-4097-8186-55e98a858807" millisBetweenRetries="${untilsuccessful.retryinterval}">
+					<http:request method="POST" doc:name="Fetch Azure Data Per Condition Types" doc:id="6bdc433b-9658-4677-92d0-b6a3a10dc57d" config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}">
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	Authorization : "Bearer" ++ " " ++ vars.token
+}]]]></http:headers>
+					</http:request>
+				</until-successful>
+				<ee:transform doc:name="Information" doc:id="37887265-0c15-4c87-96f1-79203e2c4ee4" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="baseProp" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.counter ++ "-" ++ vars.totalVal ++ "-" ++ vars.finalCount ++ "-" ++ vars.azureLogId ++ "-" ++ vars.sessionId ++ "-" ++ vars.from_records ++ "-" ++ vars.to_records ++ "-" ++ vars.currentSalesorg]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<logger level="DEBUG" doc:name="Log Azure Data" doc:id="d2ffed22-a02d-4c8d-88cb-759fcb78585a" message="#[payload]" />
+				<ee:transform doc:name="Azure data payload" doc:id="3696d35c-0dea-4d62-bf31-b90221328ea5">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload.Table]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="sizeOfPayload"><![CDATA[%dw 2.0
+output application/java
+---
+sizeOf(payload.Table)]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<foreach doc:name="for-each-batch-of-5000" doc:id="cba277a4-b809-4c61-8655-bf7a352fc438" batchSize="${adjAssortment.to.aws.records}">
+					<set-payload value="#[%dw 2.0
+output application/java
+---
+payload]" doc:name="change-format" doc:id="49c390cb-559b-4a8a-8639-bf4ffdbee8bd" />
+					<vm:publish queueName="${ship.spin.indicator.data.queue}" doc:name="Publish" doc:id="2e495ce2-3d23-4a15-8d14-68806540afea" correlationId="#[vars.baseProp]" config-ref="VM_ship_spin_indicator" >
+					</vm:publish>
+				</foreach>
+				
+				<set-variable value="#[(vars.from_records as Number) + (p('adjAssortment.to.records') as Number)]" doc:name="increment from records" doc:id="81d4093a-c88f-41b9-af6e-9cdf4cfc8af7" variableName="from_records" />
+				<set-variable value="#[(vars.to_records as Number) + (p('adjAssortment.to.records') as Number)]" doc:name="Increment to records" doc:id="4bbfbc43-96da-4002-9118-3c84f6a85ad9" variableName="to_records" />
+				<error-handler >
+					<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="7fc42d0b-9cc3-4b06-b431-1db8cd01fdaf" >
+						<logger level="INFO" doc:name="Logger" doc:id="4d6c753c-ee5e-4200-83c5-bc4155d888b8" message="Error occurred in adj-kpi-assortment-get measures based data flow "/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</foreach>
+	</flow>
+	<flow name="adj-kpi-assortment-to-heroku" doc:id="54898628-3954-4a5b-a01b-56d33e5deeb8" >
+		<vm:listener queueName="${ship.spin.indicator.data.queue}" doc:name="Listener" doc:id="e4751117-75e4-4962-b9c7-d09d40818b96" numberOfConsumers="1" config-ref="VM_ship_spin_indicator"/>
+		<choice doc:name="Null check" doc:id="96a6ec21-e333-4cbb-9339-6584263f0305" >
+			<when expression="#[payload != null]">
+				<set-variable value="#[%dw 2.0
+output application/java
+---
+attributes.correlationId splitBy '-']" doc:name="Set Variable" doc:id="7efae674-ac77-4723-819d-6c9312a93f7c" variableName="baseProp"/>
+				<ee:transform doc:name="_baseline-properties" doc:id="d77a4ce4-db38-49d3-ae75-f3440048126a">
+					<ee:message />
+					<ee:variables>
+						<ee:set-variable resource="dwls/baseline/counterProp.dwl" variableName="counter" />
+						<ee:set-variable resource="dwls/baseline/salesorgProp.dwl" variableName="currSalesorg" />
+						<ee:set-variable resource="dwls/baseline/sessionIdProp.dwl" variableName="sessionId" />
+						<ee:set-variable resource="dwls/baseline/logIdProp.dwl" variableName="azureLogId" />
+						<ee:set-variable resource="dwls/baseline/finalCntProp.dwl" variableName="finalCount" />
+						<ee:set-variable resource="dwls/baseline/totalVolProp.dwl" variableName="totalVal" />
+						<ee:set-variable variableName="interfaceName"><![CDATA[%dw 2.0
+output application/json
+---
+""]]></ee:set-variable>
+						<ee:set-variable resource="dwls/baseline/cursorEndProp.dwl" variableName="to_records" />
+						<ee:set-variable resource="dwls/baseline/cursorStartProp.dwl" variableName="from_records" />
+					</ee:variables>
+				</ee:transform>
+				<ee:transform doc:name="Build AWS payload" doc:id="c177974e-cc83-43aa-abb0-9f6a15c441c8" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"type" : payload.MeasureCode[0],
+	"prices" : payload map {
+		
+		"acc": $.Customer,
+		"prd" : $.Product,
+		"value" : if ($.Value !="" and $.Value !=null) $.Value as Number else 0,
+		"datefrom" : if ($.Valid_From !="" and $.Valid_From !=null) $.Valid_From as Date else "2020-01-01",
+		"datethru" : if ($.Valid_Thru !="" and $.Valid_Thru !=null) $.Valid_Thru as Date else "9999-12-31"
+		
+	}
+	
+	
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="adj-kpi-assortment-update-heroku-flow" doc:id="1dc98cb7-5d34-4d0c-8dae-7dec12edc85c" name="adj-kpi-assortment-update-heroku-flow"/>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="No data" doc:id="1d736922-41a9-474a-9e06-9c37b75021df" message="===== No Data Found =========="/>
+			</otherwise>
+		</choice>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="5067a1b5-6c5e-46dc-9721-b9593bd0836e" >
+				<logger level="INFO" doc:name="Log-exception" doc:id="90a09033-5aeb-4d32-a1db-714cf581e4bd" message="#[error.description]"/>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="adj-kpi-assortment-update-heroku-flow" doc:id="372ea8b6-bda1-4603-8504-81ad37236e66" >
+		<set-variable value="#[1]" doc:name="noOfMessages" doc:id="4d2d4a07-0a85-43b5-8a9e-a395668001c0" variableName="noOfMessages" />
+		<flow-ref doc:name="register-acps-transaction-id-flow" doc:id="6a918a4e-3776-400f-8224-5c5c9e638009" name="register-acps-transaction-id-flow" target="transactionId" />
+		<logger level="INFO" doc:name="Logging transaction info" doc:id="a623e2a4-4f67-4fba-bf51-e088c6d46633" message="#['Transaction number is'  ++ ' ' ++ vars.transactionId ++ 'for batch' ++ ' ' ++ vars.counter ++ ' ' ++ 'and salesorg' ++ ' ' ++ vars.currentSalesorg]" />
+		<logger level="INFO" doc:name="Logging payload for debug" doc:id="5eeee105-3511-4808-990c-f3a20a3523c2" message="==payload before sending to ACPS == #[payload]" />
+		<until-successful maxRetries="${untilsuccessful.maxretries}" doc:name="Retry" doc:id="9cf47f0f-f3f6-422a-b91a-dcad89ebe678" millisBetweenRetries="${untilsuccessful.retryinterval}">
+			<http:request method="PUT" doc:name="HTTP_POST_TO_ACPS" doc:id="f1a4cf80-cfc7-4f49-80f8-e1bf6c3cf8d7" doc:description="ACPS api for posting baseline data." config-ref="HTTPS_Request_configuration_ACPS" path="${adjAssortment.aws.path}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"content-type" : "application/json"
+}]]]></http:headers>
+			<http:query-params><![CDATA[#[output application/java
+---
+{
+       transaction : vars.transactionId
+       
+}]]]></http:query-params>
+			<http:response-validator>
+				<http:success-status-code-validator values="0..599" />
+			</http:response-validator>
+		</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="ACPS response" doc:id="ab1963de-624f-48c8-9e33-c4c3db863015" message="==ACPS final response ====#[payload] ::::::: transaction ID ::::::#[vars.transactionId]" />
+		<os:store doc:name="TxnId Store" doc:id="2a3c1e5d-d330-4ae1-a406-7ccf97661e58" key="#['adjkpiassortment' ++ vars.transactionId]" objectStore="ObjectStore__Connector_Adj_Kpi_Assortment">
+			<os:value ><![CDATA[#['txnId']]]></os:value>
+		</os:store>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="cca39229-4964-4ac0-9fbf-6e8e68164618" >
+				<set-variable value="#['Reading data based on unique Measure types from Azure and posting to Heroku']" doc:name="stepName" doc:id="2512ae08-7185-4507-8472-4c5c0a5530d1" variableName="stepName"/>
+				<flow-ref doc:name="azure-log-table-update-flow" doc:id="82a55360-22c2-41e2-804c-ea18746644be" name="azure-log-table-update-flow"/>
+				<ee:transform doc:name="setting properties" doc:id="c821e41b-f755-40e9-8384-67b1a7947bfc" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="status" ><![CDATA[%dw 2.0
+output application/java
+---
+2]]></ee:set-variable>
+						<ee:set-variable variableName="batchNo" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.currentCount]]></ee:set-variable>
+						<ee:set-variable variableName="errorVar" ><![CDATA[%dw 2.0
+output application/java
+---
+true]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<set-variable value="Failed Inserting  from batch : #[vars.from_records] to #[vars.to_records] for Salesorg : #[vars.currentSalesorg] and Measure : #[vars.currentCode]" doc:name="messageVar" doc:id="ee5b9924-5e72-4a67-b0c3-a24d2449c33f" variableName="message"/>
+				<ee:transform doc:name="set dummt transactionId" doc:id="dd3e83ab-938b-449d-a829-ed886415a887" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="transactionId" ><![CDATA[%dw 2.0
+output application/java
+var dummyTrans= now().milliseconds ++ "_dummy_" ++ vars.transactionId
+---
+if ((sizeOf (dummyTrans))<=20) dummyTrans else dummyTrans[0 to 19]]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<os:store doc:name="TxnId Store" doc:id="12d13df1-ce21-4675-b9d3-e8f577673d99" key="#['adjkpiassortment' ++ vars.transactionId]" objectStore="ObjectStore__Connector_Adj_Kpi_Assortment">
+			<os:value ><![CDATA[#['txnId']]]></os:value>
+		</os:store>
+				<flow-ref doc:name="azure-log-table-update-flow" doc:id="00e91fcb-fdf1-4f4d-93e0-75f4611978b1" name="azure-log-table-update-flow"/>
+				<remove-variable doc:name="remove-azureLogId" doc:id="798b68c0-810c-4747-a25c-701d17ec5c6a" variableName="azureLogId"/>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+	
+	
+</mule>

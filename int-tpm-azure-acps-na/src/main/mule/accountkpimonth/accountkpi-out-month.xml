@@ -1,0 +1,732 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+	<os:object-store name="Object_store_AccountKpi" doc:name="Object store" doc:id="e0dbbb18-bd7a-4282-8cab-773abd592ba3"/>
+	<os:object-store name="account_kpi_os" doc:name="Object store" doc:id="44cc448c-eb6d-4957-9c2b-be80e0e7b544" />
+	<flow name="account-kpi-out-flow-initialization" doc:id="ad23544c-69d1-4c82-9f15-fa4f87028528" >  
+		   <scheduler doc:name="starts-exceution" doc:id="1724008a-645e-45b4-8473-004f583f2235">
+			<scheduling-strategy>
+				<cron expression="0 0 0 1 * ? *" />
+			</scheduling-strategy> 
+		</scheduler> 
+		<logger level="INFO" doc:name="log-flow-start" doc:id="729dfaf2-46e4-417f-8a53-8beb04f1f276" message="============== Started Account Kpi Out Month Flow ======================"/>
+		<flow-ref doc:name="generate-azure-token" doc:id="0665ef29-aa28-45db-8ad3-2e0cd175dcaa" name="store-azuretoken-flow" />
+		<os:clear doc:name="clear-object-store" doc:id="28d7be29-6c1f-4f4d-8736-366874797bb7" objectStore="Object_store_AccountKpi"/>
+		<os:retrieve doc:name="retrieve-last-sucessfull-runtime" doc:id="1f97c833-ca6a-4af5-a46e-a465ac52b1fb" key="LastSuccessfulRun_AccountKPI" objectStore="account_kpi_os" target="LastSuccessfulRun_AccountKPI_Var">
+			<os:default-value ><![CDATA[#[p('defaultTime.AccountKPI.Out')]]]></os:default-value>
+		</os:retrieve>
+		<ee:transform doc:name="set-variables" doc:id="3eba6b5b-f231-43bd-a162-a47e6871a98c" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="currentDateTime" ><![CDATA[%dw 2.0
+output application/java
+---
+now() as String {format: "yyyy-MM-dd HH:mm:ss"}]]></ee:set-variable>
+				<ee:set-variable variableName="lastSucessfullRun" ><![CDATA[%dw 2.0
+output application/java
+---
+ if (vars.LastSuccessfulRun_AccountKPI_Var != null) vars.LastSuccessfulRun_AccountKPI_Var else (now() as String {format: "yyyy-MM-dd HH:mm:ss"})]]></ee:set-variable>
+				<ee:set-variable variableName="azureLogging" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	message : "Started Processing Account KPI",
+	status : 0,
+	stepName : "Started Processing Account KPI",
+	flowName : "TPMFlowName_FundTransOutDeltaPBCS"
+}]]></ee:set-variable>
+				<ee:set-variable variableName="appName" ><![CDATA[%dw 2.0
+output application/java
+---
+"AccountKpiOut"]]></ee:set-variable>
+				<ee:set-variable variableName="flowName" ><![CDATA[%dw 2.0
+output application/java
+---
+"TPMFlowName_FundTransOutDeltaPBCS"]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="check-valid-session-flow" doc:id="42101fe3-190b-4e0f-9121-fded967c4331" name="check-valid-session-flow"/>
+			</flow>
+	<sub-flow name="check-valid-session-flow" doc:id="cc7215cc-6e3f-4f0e-a8bf-b4633c7b3080" >
+		<flow-ref doc:name="get-session-flow" doc:id="ececf1cf-883c-4890-b686-88011bef8c0a" name="get-session-flow"/>
+		<set-variable value="#[payload.Session_ID[0]]" doc:name="set-session-id" doc:id="debab092-17cc-4387-930e-c03808241e5c" variableName="sessionID"/>
+		<choice doc:name="Choice" doc:id="4504d4d6-c98a-409c-8e43-df518af72507" >
+			<when expression="#[vars.sessionID != null]">
+				<logger level="INFO" doc:name="print-last-successful-runtime" doc:id="90b116e3-8d65-440a-b843-a1472d60f127" message="===== AWS Last Sucessful Runtime === #[vars.lastSucessfullRun] ====="/>
+				<flow-ref doc:name="log-to-azure-flow" doc:id="0826331e-a6c6-4f45-8996-9c83658a63d9" name="log-to-azure-flow"/>
+				<flow-ref doc:name="get-changed-accounts-flow" doc:id="ebd14e1d-a77e-48f7-9f29-d07cf2cebccc" name="get-changed-accounts-flow"/>
+			
+</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="4a0545a5-d038-4c2b-8948-6abd43d21f78" message="========== No session fetched , puhsing message to MQ ============="/>
+				<flow-ref doc:name="Flow Reference" doc:id="edc22185-3d1d-4a4b-8548-08c42a77902f" name="push-message-to-MQ"/>
+			</otherwise>
+		</choice>
+
+	</sub-flow>
+	<flow name="get-changed-accounts-flow" doc:id="2a840198-7836-4bd0-9d0a-e3e3f2d4e952" >
+	<http:request method="POST" doc:name="get-changed-accounts-from-aws" doc:id="1e167310-ac4c-4db2-8efd-ba283ed43b53" config-ref="HTTPS_Request_configuration_ACPS" path="/api/v1/accountplans/changed/{datetime}">
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	datetime : vars.lastSucessfullRun
+}]]]></http:uri-params>
+			<http:query-params ><![CDATA[#[output application/java
+---
+{
+	salesorg : '0007,0001'
+}]]]></http:query-params>
+		</http:request>
+		<choice doc:name="Choice" doc:id="5cbe30db-fd5d-45c9-823b-afaf8ee279e0">
+			<when expression="#[(attributes.statusCode == 200 ) and (sizeOf(payload) &gt; 0)]">
+				<ee:transform doc:name="set-account-and-year" doc:id="f2b85e5b-a981-4422-80e3-8057dd64f23c">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+(payload map {
+	iteratingaccountID : $.acc,
+	iteratingyear : $.year
+} distinctBy  ($.iteratingaccountID ++ $.iteratingyear))
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				<logger level="INFO" doc:name="log-changed-accounts" doc:id="85a66fc8-1435-40d5-8af5-77db208a7c2d" message="=== Changed Accounts from AWS === List Count === #[sizeOf(payload)] and === Accounts === #[payload]"/>
+				<foreach doc:name="iterate-over-account" doc:id="96ea7d18-a34f-4da4-be0a-96fb61646594">
+			<os:store doc:name="store-account-details" doc:id="7a05482e-df93-4358-afc8-81fa54a7735e" key='#["ChangeAccount_" ++ (payload.iteratingaccountID as String) ++ "_" ++ (payload.iteratingyear as String)]' objectStore="Object_store_AccountKpi">
+						<os:value ><![CDATA[#["Changed Account"]]]></os:value>
+					</os:store>
+					<ee:transform doc:name="set-outbound-variables" doc:id="9ec149a1-3d67-4788-a05e-15b26fe02049" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	data : payload,
+		sessionID : vars.sessionID,
+		Azure_Log_ID : vars.Azure_Log_ID,
+		lastSucessfullRun : vars.lastSucessfullRun	
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<vm:publish doc:name="vm-publish" doc:id="a82291d5-5409-4000-bb4b-f7d08c59c38c" config-ref="VM_Account_KPI" queueName="accountkpi" timeout="20"/>
+		</foreach>
+				<logger level="INFO" doc:name="log-flow-status" doc:id="ef14a869-d64d-463c-8fd1-cde01afe6316" message="===== Completed Changed Accounts Flow ====="/>
+				<set-payload value="Account KPI flow" doc:name="Set Payload" doc:id="7af79638-3ca5-4014-8f13-bca475af1bd5" />
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="log-no-changed-accounts" doc:id="2047c96c-6c2c-4248-bb76-0fde1296bfa0" message="======= No Changed Accounts Fetched from AWS ======="/>
+				<ee:transform doc:name="set-azure-log-variables" doc:id="425dd41b-3e3e-431a-bef2-71d96dbb4799">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	message : "Finished Processing of Account KPI - no changed accounts fetched",
+	status : 1,
+	stepName : "Finished Processing of Account KPI - no changed accounts fetched",
+	flowName : "TPMFlowName_FundTransOutDeltaPBCS"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="log-to-azure-flow" doc:id="89ff546e-6883-4354-901f-1caf7e5c926f" name="log-to-azure-flow"/>
+				<flow-ref doc:name="session-closure-flow" doc:id="f3ca3c99-ca0b-4a24-901e-70b2632d8201" name="session-closure-flow" />
+			
+</otherwise>
+		</choice>
+	
+	</flow>
+	<flow name="measure-code-batching-flow" doc:id="d7b2e342-31fd-4f1a-9bc9-a390b55423ba" >
+		<vm:listener queueName="accountkpi" doc:name="vm-listener" doc:id="05d4aa9b-45e2-4d35-b044-97c85a9d35fe" config-ref="VM_Account_KPI" timeout="20" numberOfConsumers="1"/>
+		<ee:transform doc:name="set-inbound-properties" doc:id="a2429ba9-753c-4595-be8b-6c7a68c15a6d" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload.data]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="measure_code" ><![CDATA[%dw 2.0
+output application/java
+---
+p('accountKPI.measures') splitBy ","]]></ee:set-variable>
+				<ee:set-variable variableName="sessionID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.sessionID]]></ee:set-variable>
+				<ee:set-variable variableName="Azure_Log_ID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.Azure_Log_ID]]></ee:set-variable>
+				<ee:set-variable variableName="lastSucessfullRun" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.lastSucessfullRun]]></ee:set-variable>
+				<ee:set-variable variableName="accountID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.data.iteratingaccountID]]></ee:set-variable>
+				<ee:set-variable variableName="year" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.data.iteratingyear]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		
+		<foreach doc:name="iterate-over-measure-codes" doc:id="faa9d1e5-0c3c-44b6-a9da-bdafadb41556" collection="#[vars.measure_code]" batchSize="20">
+			<ee:transform doc:name="set-outbound-properties" doc:id="3cd6ec1f-6f60-4933-ad17-a09a9ed572a2" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"codes" : payload,
+	"sessionID" : vars.sessionID,
+	"counter" : (vars.counter - 1),
+	"year" : vars.year,
+	"accountID" : vars.accountID,
+	"lastSucessfullRun" : vars.lastSucessfullRun,
+	"Azure_Log_ID": vars.Azure_Log_ID
+
+}
+]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<vm:publish doc:name="vm-publish" doc:id="bf82c6f2-870e-4982-8948-51c94a46f240" config-ref="VM_Account_KPI" queueName="kpidetails" timeout="20"/>
+		
+</foreach>
+		<set-payload value="published" doc:name="Set Payload" doc:id="422cba4e-8430-48d3-b626-d71250d33a5e" />
+	</flow>
+	<flow name="get-kpi-details-metadata" doc:id="b89cef42-e602-42fa-82f0-1f0d007d0450" >
+		<vm:listener doc:name="vm-listener" doc:id="cbcfd834-ceb9-4b71-a9a6-aaedd8677fec" config-ref="VM_Account_KPI" queueName="kpidetails" timeout="20" numberOfConsumers="1"/>
+		<ee:transform doc:name="set-inbound-variables" doc:id="619119f4-c717-46d5-94da-b0049b11f39c">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="sessionID"><![CDATA[%dw 2.0
+output application/java
+---
+payload.sessionID]]></ee:set-variable>
+				<ee:set-variable variableName="Azure_Log_ID"><![CDATA[%dw 2.0
+output application/java
+---
+payload.Azure_Log_ID]]></ee:set-variable>
+				<ee:set-variable variableName="lastSucessfullRun"><![CDATA[%dw 2.0
+output application/java
+---
+payload.lastSucessfullRun]]></ee:set-variable>
+				<ee:set-variable variableName="accountID"><![CDATA[%dw 2.0
+output application/java
+---
+payload.accountID]]></ee:set-variable>
+				<ee:set-variable variableName="year"><![CDATA[%dw 2.0
+output application/java
+---
+payload.year]]></ee:set-variable>
+				<ee:set-variable variableName="accountYear"><![CDATA[%dw 2.0
+output application/java
+---
+(payload.accountID as String)
+++ "_" ++ (payload.year as String)]]></ee:set-variable>
+				<ee:set-variable variableName="measureCode"><![CDATA[%dw 2.0
+output application/java
+---
+payload.codes joinBy ","]]></ee:set-variable>
+				<ee:set-variable variableName="counter" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.counter]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="log-flow-status" doc:id="15d521d2-63e8-4d01-82ea-43f6a35c07aa" message="=== To Fetch KPI Details from AWS ==="/>
+		<until-successful maxRetries="5" doc:name="Retry" doc:id="56823358-9b10-45e2-8ca6-07b42aec53d1">
+			<http:request method="GET" doc:name="get-kpi-details-metadata" doc:id="69b1f634-74d8-4042-94f6-16a2024516a2" config-ref="HTTPS_Request_configuration_ACPS" path="/api/v1/accountplans/{accountid}/year/{year}/list" responseTimeout="60000" followRedirects="true" sendBodyMode="AUTO" requestStreamingMode="AUTO">
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	accountid : vars.accountID,
+	year : vars.year
+}]]]></http:uri-params>
+			<http:query-params><![CDATA[#[output application/java
+---
+{
+	measure : vars.measureCode as String,
+	keepalive : 20,
+	timeblock : "month",
+	pagesize : 10000,
+	showmeta : true,
+	productlevel : "Product"
+}]]]></http:query-params>
+			<http:response-validator>
+				<http:success-status-code-validator values="0..599" />
+			</http:response-validator>
+		</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="log-flow-status" doc:id="fd7d95bf-e485-4373-8f50-edb23ccd3343" message="=== KPI Details Fetched from AWS ==="/>
+		<os:store doc:name="store-data-volume" doc:id="8935e49c-1c3b-43f5-8980-208c7c48303a" key='#["DataVolume_" ++ (payload.meta.total as String) ++ "_" ++ (vars.accountYear as String) ++ "_" ++ (vars.counter as String)]' objectStore="Object_store_AccountKpi">
+			<os:value ><![CDATA[#["data_volume"]]]></os:value>
+		</os:store>
+		<choice doc:name="Choice" doc:id="f61d4838-78cf-403b-acc7-1c1c131c868f">
+			<when expression='#[(write(payload.measures,"application/json") contains ("measurecode")) and (attributes.statusCode == 200 )]'>
+				<logger level="INFO" doc:name="log-kpi-info-found" doc:id="4fca83de-0548-4673-bd07-5d73504fffff" message="KPI info found for account : #[vars.accountID] of year : #[vars.year]" />
+				<ee:transform doc:name="set-outbound-properties" doc:id="53dbf97d-1c9b-42b1-8860-89963a620c80">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"kpiData" : payload,
+	"sessionID" : vars.sessionID,
+	"accountID" : vars.accountID,
+	"year" : vars.year,
+	"measureCode" : vars.measureCode,
+	"Azure_Log_ID" : vars.Azure_Log_ID,
+	"counter" : vars.counter,
+	"accountYear" : vars.accountYear,
+	"lastSucessfullRun" : vars.lastSucessfullRun
+	
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<vm:publish doc:name="vm-publish" doc:id="de79d04c-b8ab-453f-813e-43bcfb196c1a" config-ref="VM_Account_KPI" queueName="getkpidata" timeout="20"/>
+			</when>
+			<when expression="#[(!(write(payload.measures,'application/json') contains (&quot;measurecode&quot;))) and (attributes.statusCode == 200 )]">
+				<logger level="INFO" doc:name="log-blank-kpi-info" doc:id="a80857c2-ca47-4bbd-8d63-adda5ebf828d" message="=== No KPI Info found for account : #[vars.accountID] of year : #[vars.year] ===" />
+				<os:store doc:name="store-blank-kpi-account" doc:id="9dd23718-2209-49aa-aa6a-3986ce6870de" key='#["blankKPI_" ++ (vars.accountYear as String) ++ "_0" ++ "_Batch_" ++ (vars.counter as String)]' objectStore="Object_store_AccountKpi">
+					<os:value><![CDATA[#["blankKPI"]]]></os:value>
+				</os:store>
+				<ee:transform doc:name="set-outbound-properties" doc:id="d39ac0c1-85f8-4244-ae9d-66cda390c381" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+  "sessionID": vars.sessionID,
+  "Azure_Log_ID": vars.Azure_Log_ID,
+  "lastSucessfullRun": vars.lastSucessfullRun
+  						
+  }]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<vm:publish queueName="endpoint" doc:name="vm-publish" doc:id="7c2391d8-b782-4fea-ad6c-ee0dd5602f1f" config-ref="VM_Account_KPI" timeout="20"/>
+			
+
+</when>
+			<when expression="#[(attributes.statusCode == 404 )]">
+				<logger level="INFO" doc:name="log-unknown-accounts" doc:id="01a0c61f-a3f7-433b-a48f-ac9775aa0ff4" message="=== Returned 404 status for #[vars.accountID] as it is an unknown Account of year : #[vars.year] ===" />
+				<os:store doc:name="store-unknown-account" doc:id="27b1b53f-eb41-44f3-8f40-3c4c2bb82db0" key='#["unknownAccounts_" ++ (vars.accountYear as String) ++ "_0" ++ "_Batch_" ++ (vars.counter as String)]' objectStore="Object_store_AccountKpi">
+					<os:value><![CDATA[#["UnKnownAccount"]]]></os:value>
+				</os:store>
+				<ee:transform doc:name="set-outbound-properties" doc:id="08401a19-80fd-4930-af2d-4871ae0c80eb" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+  "sessionID": vars.sessionID,
+  "Azure_Log_ID": vars.Azure_Log_ID,
+  "lastSucessfullRun": vars.lastSucessfullRun
+  }]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<vm:publish queueName="endpoint" doc:name="vm-publish" doc:id="3991f209-5f39-4777-88a5-2a48667501d5" config-ref="VM_Account_KPI" timeout="20"/>
+			
+
+</when>
+			<otherwise>
+				<logger level="INFO" doc:name="log-failed-accounts" doc:id="092a0e0f-8395-4bb5-8c9e-ab3b1f9332cd" message="=== The status of API Call is #[attributes.statusCode] for Account Id #[vars.accountID] of year #[vars.year] ===" />
+				<os:store doc:name="store-failed-accounts" doc:id="06000115-f271-46af-bd8d-1f4d916fc49a" key='#["failedAccounts_" ++ (vars.accountYear as String) ++ "_0" ++ "_Batch_" ++ (vars.counter as String)]' objectStore="Object_store_AccountKpi">
+					<os:value><![CDATA[#["failedAccounts"]]]></os:value>
+				</os:store>
+				<ee:transform doc:name="set-outbound-properties" doc:id="69e86c15-142a-4598-a96b-cec42fe03867" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+  "sessionID": vars.sessionID,
+  "Azure_Log_ID": vars.Azure_Log_ID,
+  "lastSucessfullRun": vars.lastSucessfullRun
+  }]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<vm:publish queueName="endpoint" doc:name="vm-publish" doc:id="79ab5f39-81e8-4128-88f7-453e1d5b411b" config-ref="VM_Account_KPI" timeout="20"/>
+			
+</otherwise>
+		</choice>
+		<set-payload value="published" doc:name="Set Payload" doc:id="00ab6fc9-0fc3-4f90-9912-0af9a2bcaba5" />
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="8f8b41d6-db3e-4ee5-9782-9237350082b3" type="ANY">
+				<logger level="INFO" doc:name="log-exception" doc:id="4ec08106-9062-40b5-a4b3-14a9d557dd3b" message="=== Inside Exception Strategy. Error occured for accountID = #[vars.accountID] for year = #[vars.year] ==="/>
+				<os:store doc:name="store-exceptional-accounts" doc:id="de515e20-b712-4e0b-adb9-e9192ebb4827" key='#["failedAccounts_" ++ (vars.accountYear as String) ++ "_0" ++ "_Batch_" ++ (vars.counter as String)]'>
+					<os:value ><![CDATA[#["Failed Account"]]]></os:value>
+				</os:store>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+	<flow name="Get-account-data-pagewise-flow" doc:id="2d40a914-a86a-4aed-91a2-c7bb2a325c4e" maxConcurrency="20">
+		<vm:listener queueName="getkpidata" doc:name="vm-listener" doc:id="ad768437-56a3-4ca4-996f-c78f1bcf0a4e" config-ref="VM_Account_KPI" timeout="20" numberOfConsumers="1"/>
+		<ee:transform doc:name="set-inbound-properties" doc:id="3acaa40d-2a95-48fd-a6c1-625a7cf9a129">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload.kpiData]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="sessionID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.sessionID]]></ee:set-variable>
+				<ee:set-variable variableName="accountID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.accountID]]></ee:set-variable>
+				<ee:set-variable variableName="year" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.year]]></ee:set-variable>
+				<ee:set-variable variableName="measureCode" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.measureCode]]></ee:set-variable>
+				<ee:set-variable variableName="Azure_Log_ID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.Azure_Log_ID]]></ee:set-variable>
+				<ee:set-variable variableName="counter" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.counter]]></ee:set-variable>
+				<ee:set-variable variableName="accountYear" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.accountYear]]></ee:set-variable>
+				<ee:set-variable variableName="lastSucessfullRun" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.lastSucessfullRun]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="set-kpi-metadata" doc:id="6df59935-b13b-40b2-88c6-31f15de2d31e">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="linkNext"><![CDATA[%dw 2.0
+output application/java
+---
+{
+	 recordid :payload.meta.request_id,
+	 pagecount :(payload.meta.page_count) as Number
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="99052695-5df9-4bc2-a453-fcd82159a745" >
+			<when expression="#[(vars.linkNext.pagecount) &gt; 1]">
+				<ee:transform doc:name="set-page-array-list" doc:id="4860138d-4ec7-4a8e-85d9-a4f95d0bc939">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+(0 to (vars.linkNext.pagecount - 1)) map ({
+	"pageNumber":$
+})]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<logger level="INFO" doc:name="log-kpi-data-page-count" doc:id="2de935a2-260d-4f1c-ba52-244e86382808" message="=== Multi page data for #[vars.accountID] ==="/>
+				<foreach doc:name="iterate-over-each-page" doc:id="aadb3db7-4428-499b-a823-a31aa90714bc">
+					<ee:transform doc:name="map-kpi-data" doc:id="be85568d-6d19-4dd3-816e-9dc2c8a91857">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	data : payload,
+	accountID : vars.accountID,
+	year : vars.year,
+	sessionID : vars.sessionID,
+	flowName : "TPMFlowName_FundTransOutDeltaPBCS",
+	recordID : vars.linkNext.recordid,
+	measureCode : vars.measureCode,
+	counter : vars.counter,
+	page : "multi"
+
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+					<flow-ref doc:name="get-kpi-details-pagewise" doc:id="63953de4-820a-4602-8ec7-cb0cf8a8a996" name="get-kpi-details-pagewise"/>
+		
+</foreach>
+			
+</when>
+			<otherwise >
+				<ee:transform doc:name="measures-array" doc:id="69996247-84d3-4b4c-a719-4e761860e00f">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload.measures]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<foreach doc:name="iterate-over-measure-codes" doc:id="2686533c-2247-4497-89d7-c6f8dacbe32a" batchSize="1000">
+					<ee:transform doc:name="map-kpi-data" doc:id="edfc4a9c-825e-4780-8659-c1aef70351b3">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	data : payload,
+	accountID : vars.accountID,
+	year : vars.year,
+	sessionID : vars.sessionID,
+	flowName : "TPMFlowName_FundTransOutDeltaPBCS",
+	recordID : vars.linkNext.recordid,
+	counter : vars.counter,
+	page : "single"
+
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+					<flow-ref doc:name="post-data-to-azure" doc:id="782dc829-7c04-4d94-8c37-f65044382a85" name="post-data-to-azure-flow"/>
+				
+</foreach>
+			</otherwise>
+		</choice>
+		<logger level="INFO" doc:name="log-flow-status" doc:id="73b06101-ea5e-4ec2-a8fd-93d40093bda0" message='#["finished processing for " ++ (vars.accountYear as String) ++ "_Batch_" ++  (vars.counter as String)]'/>
+		<os:store doc:name="store-account" doc:id="def0940f-4fb5-45f3-ab96-3808a6bbf9e8" key='#["CompletedKPI_" ++ (vars.accountYear as String) ++ "_Batch_" ++  (vars.counter as String)]' objectStore="Object_store_AccountKpi">
+			<os:value ><![CDATA[#["completed"]]]></os:value>
+		</os:store>
+		<ee:transform doc:name="set-variables" doc:id="83908a79-98b1-47de-8ed0-534a3f1e7fc1" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+  "sessionID": vars.sessionID,
+  "Azure_Log_ID": vars.Azure_Log_ID,
+  "lastSucessfullRun": vars.lastSucessfullRun
+  }]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<vm:publish doc:name="Publish" doc:id="961b4007-06ab-4ec4-8a4c-fca09532d6ae" config-ref="VM_Account_KPI" queueName="endPoint" timeout="20"/>
+		<error-handler>
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="fb8b66e9-8846-4161-b072-6b4eaee97bf9" type="ANY">
+				<logger level="INFO" doc:name="log-exception" doc:id="0a2e2200-8161-4f77-ac9a-ed65ec1d6603" message="=== Inside Exception Strategy. Error Occured for AccountID = #[vars.accountID] for year = #[vars.year] ==="/>
+				<os:store doc:name="store-exceptional-accounts" doc:id="f67321a6-4e04-4a50-95cc-524c6201e19b" key='#["failedAccounts_" ++ (vars.accountYear as String) ++ "_0" ++ "_Batch_" ++ (vars.counter as String)]' objectStore="Object_store_AccountKpi">
+					<os:value ><![CDATA[#["failed account"]]]></os:value>
+				</os:store>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+	<flow name="push-message-to-MQ" doc:id="a8b8fc9f-498e-4204-980b-8ec2edfe3206" >
+		<logger level="INFO" doc:name="Logger" doc:id="2612546c-0ae9-4504-8dff-8c2e628c3b28" message="Push message to MQ"/>
+	</flow>
+	<flow name="get-kpi-details-pagewise" doc:id="b7106908-3bc7-4b15-8dee-7766880e40b7" maxConcurrency="20">
+		<ee:transform doc:name="set-variables" doc:id="7601c2bd-548f-4b75-8638-7a402e8aa6a6" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload.data.pageNumber]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="flowName" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.flowName]]></ee:set-variable>
+				<ee:set-variable variableName="sessionID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.sessionID]]></ee:set-variable>
+				<ee:set-variable variableName="accountID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.accountID]]></ee:set-variable>
+				<ee:set-variable variableName="year" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.year]]></ee:set-variable>
+				<ee:set-variable variableName="recordID" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.recordID]]></ee:set-variable>
+				<ee:set-variable variableName="measureCode" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.measureCode as String]]></ee:set-variable>
+				<ee:set-variable variableName="counter" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.counter]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="log-flow-status" doc:id="d58f1f4d-2931-47cf-a505-63d195d4685d" message="=== To Fetch Pagewise KPI deatils from AWS ==="/>
+		<until-successful maxRetries="5" doc:name="Retry" doc:id="221a10b0-9da9-46e4-aa62-129fa0ea6320">
+			<http:request method="GET" doc:name="get-kpi-details-pagewise" doc:id="53e1c3ec-0f3b-422f-ba87-ddc2d8de5420" config-ref="HTTPS_Request_configuration_ACPS" path="/api/v1/accountplans/{accountid}/year/{year}/list" responseTimeout="60000" followRedirects="true" sendBodyMode="AUTO" requestStreamingMode="AUTO">
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	accountid : vars.accountID,
+	year : vars.year
+}]]]></http:uri-params>
+			<http:query-params><![CDATA[#[output application/java
+---
+{
+	measure : vars.measureCode as String,
+	keepalive : 20,
+	timeblock : "month",
+	pagesize : 10000,
+	showmeta : true,
+	productlevel : "Product",
+	page : payload,
+	request_id : vars.recordID
+}]]]></http:query-params>
+		</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="log-flow-status" doc:id="0e22d1b3-e7df-47db-a26f-33b129f811fc" message="=== Fetched Pagewise KPI details from AWS ==="/>
+		<logger level="INFO" doc:name="log-kpi-details" doc:id="e3118890-0731-4989-adbe-10edf73b6537" message="=== KPI details fetched for accountID: #[vars.accountID] of year: #[vars.year] ==="/>
+		<ee:transform doc:name="payload-to-post-to-azure" doc:id="cd8a6f3e-3a0f-49dd-aadb-74b778c041b1" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload.measures]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<foreach doc:name="iterate over kpi data" doc:id="e9a72ee7-7091-424d-86b9-4d969149b367" batchSize="1000">
+			<ee:transform doc:name="set-variables" doc:id="51574eb1-0496-4b79-8ad9-470bee1e2023" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	data : payload,
+	accountID : vars.accountID,
+	year : vars.year,
+	sessionID : vars.sessionID,
+	flowName : "TPMFlowName_FundTransOutDeltaPBCS",
+	azureToken : vars.azureToken,
+	counter : vars.counter,
+	page : "multi"
+	
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<flow-ref doc:name="post-data-to-azure-flow" doc:id="8c555be4-795e-4eb2-ad25-3d377c638676" name="post-data-to-azure-flow"/>
+		
+</foreach>
+		<set-payload value="published" doc:name="Set Payload" doc:id="43999c2f-e655-48f6-8e1c-5d5c23fdb89c" />
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="e89a1b53-7e58-423a-8c63-d4ef22eddb3b" type="ANY">
+				<logger level="INFO" doc:name="log-exception" doc:id="0fb353b5-ba2a-485e-8084-f87555edb06b" message=" === Inside Exception Strategy. Error Occured for AccountID = #[vars.accountID] for year = #[vars.year] ==="/>
+				<os:store doc:name="store-exceptional-accounts" doc:id="c546b802-eb38-47d4-a627-0e45ad3e0ac3" key='#["failedAccounts_" ++ (vars.accountYear as String) ++ "_0" ++ "_Batch_" ++ (vars.counter as String)]' objectStore="Object_store_AccountKpi">
+					<os:value ><![CDATA[#["failed account"]]]></os:value>
+				</os:store>
+			</on-error-continue>
+		</error-handler>
+		
+	</flow>
+	<flow name="post-data-to-azure-flow" doc:id="8c97e23c-fca0-43ad-aa22-26291a02c70c" maxConcurrency="20">
+		<ee:transform doc:name="set-variables" doc:id="b18dcdc7-be69-4fb2-b83b-60f955713c62">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload.data]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="flowName"><![CDATA[%dw 2.0
+output application/java
+---
+payload.flowName]]></ee:set-variable>
+				<ee:set-variable variableName="sessionID"><![CDATA[%dw 2.0
+output application/java
+---
+payload.sessionID]]></ee:set-variable>
+				<ee:set-variable variableName="accountID"><![CDATA[%dw 2.0
+output application/java
+---
+payload.accountID]]></ee:set-variable>
+				<ee:set-variable variableName="year"><![CDATA[%dw 2.0
+output application/java
+---
+payload.year]]></ee:set-variable>
+				<ee:set-variable variableName="azureToken"><![CDATA[%dw 2.0
+output application/java
+---
+payload.azureToken]]></ee:set-variable>
+				<ee:set-variable variableName="counter" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.counter]]></ee:set-variable>
+				<ee:set-variable variableName="page" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.page as String]]></ee:set-variable>
+			
+
+</ee:variables>
+		</ee:transform>
+		<os:retrieve doc:name="retrieve-azure-token " doc:id="8840ce13-7f35-44fd-86e0-5fbfc2ec3296" key="azureTokenObj" objectStore="account_kpi_os" target="token"/>
+		<set-variable value="#[vars.token as String]" doc:name="set-azure-token" doc:id="41b42841-770b-419f-96ac-3d6320c813c0" variableName="azureToken"/>
+		<ee:transform doc:name="map-kpi-data" doc:id="b88dc10d-6f40-4721-b43a-33cc9d92829a">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+write((payload filter ($.prd != '') map (
+	{
+		Session_ID : vars.sessionID,
+		Market : "NA",
+	SalesOrganization : $.prd[-1 to -4][-1 to -4],
+		AccountID : vars.accountID,
+		Measure_ID : $.measurecode,
+	ProductID : $.prd,
+	Year : vars.year as String,
+	($.value map ({
+		("Month" ++ ($$+1) as String {format : "00"}) : if ($ != null and $ != "") ($ as String) else "" 
+	}))
+	
+	
+
+	}	
+)) , "application/json")  ]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-payload value="#[%dw 2.0
+output application/java
+---
+'&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:tem=&quot;http://tempuri.org/&quot;&gt;    &lt;soapenv:Header /&gt;    &lt;soapenv:Body&gt;       &lt;tem:${azure.method.name} &gt;          &lt;!--Optional:--&gt;          &lt;tem:tableName&gt; ${pbcs.funds.out.data.Inbound} &lt;/tem:tableName&gt;          &lt;!--Optional:--&gt;          &lt;tem:operatingType&gt;insert&lt;/tem:operatingType&gt;          &lt;!--Optional:--&gt;          &lt;tem:where /&gt;          &lt;!--Optional:--&gt;          &lt;tem:data&gt;' ++ payload ++ '&lt;/tem:data&gt;       &lt;/tem:${azure.method.name}&gt;    &lt;/soapenv:Body&gt; &lt;/soapenv:Envelope&gt;']" doc:name="set-soap-payload" doc:id="c027a381-6ab1-4713-9381-9e9cae3b3162" mimeType="text/xml"/>
+		<until-successful maxRetries="5" doc:name="Retry" doc:id="f3a76700-0a12-4aec-9054-7994c3c02278">
+			<http:request method="POST" doc:name="post-data-to-azure" doc:id="ea64d649-cd09-4a52-b47e-b661a3baf250" config-ref="HTTPS_Request_Configuration_Azure" path="${azure.service.name}" responseTimeout="120000" sendBodyMode="AUTO" requestStreamingMode="AUTO" followRedirects="true">
+			<reconnect count="10" frequency="10000"/>
+				<http:headers><![CDATA[#[output application/java
+---
+{
+	Authorization : vars.azureToken
+}]]]></http:headers>
+				<http:response-validator >
+					<http:success-status-code-validator values="0..599"/>
+				</http:response-validator>
+		</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="log-azure-response" doc:id="676b7139-f8f3-45bd-9505-2015448f46b1" message="=== Azure Response after posting data === #[payload] ==="/>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="dbb9e041-cad2-44a0-a9c3-77b406a754ad" type="ANY">
+				<logger level="INFO" doc:name="log-exception" doc:id="708f6298-e1d2-4433-9905-d09e5de11f19" message=" === Inside Exception Strategy. Error Occured for AccountID = #[vars.accountID] for year = #[vars.year] ==="/>
+				<os:store doc:name="store-exceptional-accounts" doc:id="666d99b7-ddc0-4fd8-990d-8c8acff71123" key='#["failedAccounts_" ++ (vars.accountYear as String) ++ "_0" ++ "_Batch_" ++ (vars.counter as String)]' objectStore="Object_store_AccountKpi">
+					<os:value ><![CDATA[#["failed account"]]]></os:value>
+				</os:store>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+</mule>
